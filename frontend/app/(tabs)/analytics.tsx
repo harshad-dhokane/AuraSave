@@ -106,45 +106,91 @@ export default function AnalyticsScreen() {
       .sort((a, b) => b.value - a.value);
   }, [rangedTxs, viewType, catMap]);
 
-  // Trend: last 6 months (independent of selected range)
+  // Trend chart adapts to the selected range:
+  //  • ≤ 31 days  → daily buckets
+  //  • > 31 days  → monthly buckets
   const trendData = useMemo(() => {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = now.getMonth();
-    const months: { key: string; label: string }[] = [];
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(y, m - i, 1);
-      months.push({
-        key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
-        label: d.toLocaleDateString(undefined, { month: "short" }),
-      });
+    const fromD = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+    const toD = new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59, 999);
+    const rangeDays = Math.max(1, Math.round((toD.getTime() - fromD.getTime()) / 86400000));
+    const byDay = rangeDays <= 31;
+
+    const buckets: { key: string; label: string; startMs: number; endMs: number }[] = [];
+
+    if (byDay) {
+      const cursor = new Date(fromD);
+      while (cursor.getTime() <= toD.getTime()) {
+        const start = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate());
+        const end = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), 23, 59, 59, 999);
+        buckets.push({
+          key: start.toISOString().slice(0, 10),
+          label: String(start.getDate()),
+          startMs: start.getTime(),
+          endMs: end.getTime(),
+        });
+        cursor.setDate(cursor.getDate() + 1);
+      }
+    } else {
+      const start = new Date(fromD.getFullYear(), fromD.getMonth(), 1);
+      const end = new Date(toD.getFullYear(), toD.getMonth(), 1);
+      const cursor = new Date(start);
+      while (cursor.getTime() <= end.getTime()) {
+        const bStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+        const bEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0, 23, 59, 59, 999);
+        buckets.push({
+          key: `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`,
+          label: cursor.toLocaleDateString(undefined, { month: "short" }),
+          startMs: bStart.getTime(),
+          endMs: bEnd.getTime(),
+        });
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
     }
+
     const barData: any[] = [];
     let maxVal = 0;
-    for (const mo of months) {
+    for (const b of buckets) {
       let inc = 0,
         exp = 0;
       for (const t of txs) {
-        if (t.date.slice(0, 7) !== mo.key) continue;
+        const ts = new Date(t.date).getTime();
+        if (ts < b.startMs || ts > b.endMs) continue;
         if (t.type === "income") inc += t.amount;
         else if (t.type === "expense") exp += t.amount;
       }
       maxVal = Math.max(maxVal, inc, exp);
       barData.push({
         value: Math.round(inc / 1000),
-        label: mo.label,
+        label: b.label,
         frontColor: colors.brandPrimary,
         spacing: 3,
-        labelWidth: 34,
-        labelTextStyle: { color: colors.muted, fontSize: 10 },
+        labelWidth: byDay ? 18 : 34,
+        labelTextStyle: { color: colors.muted, fontSize: 9 },
       });
       barData.push({ value: Math.round(exp / 1000), frontColor: colors.cat.terracotta });
     }
-    return { data: barData, max: Math.ceil(maxVal / 1000) };
-  }, [txs]);
+    return { data: barData, max: Math.ceil(maxVal / 1000), buckets: buckets.length, byDay };
+  }, [txs, from, to]);
 
   const chartWidth = Math.max(220, SCREEN_W - 32 - 32 - 30);
   const currentLabel = rangeLabel(from, to);
+
+  // Fit any bucket count within chartWidth: each month has 2 bars + intra-pair spacing.
+  const usableWidth = chartWidth - 20; // account for y-axis label
+  const nBuckets = Math.max(1, trendData.buckets);
+  // 2 bars per bucket + 1 intra-pair gap + 1 inter-bucket gap per bucket.
+  // approx per-bucket width = 2*bw + 3 + spacing → solve for bw and spacing.
+  // Simple heuristic:
+  let dynamicBarWidth = trendData.byDay ? 6 : 10;
+  let dynamicSpacing = trendData.byDay ? 4 : 12;
+  const perBucket = 2 * dynamicBarWidth + 3 + dynamicSpacing;
+  const needed = perBucket * nBuckets + 12;
+  if (needed > usableWidth) {
+    // shrink bars/spacing proportionally
+    const scale = usableWidth / needed;
+    dynamicBarWidth = Math.max(3, Math.floor(dynamicBarWidth * scale));
+    dynamicSpacing = Math.max(2, Math.floor(dynamicSpacing * scale));
+  }
 
   return (
     <ScrollView
@@ -272,9 +318,11 @@ export default function AnalyticsScreen() {
         )}
       </View>
 
-      {/* Trend chart */}
+      {/* Trend chart — buckets follow selected range */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>6-month trend</Text>
+        <Text style={styles.cardTitle}>
+          {trendData.byDay ? "Daily trend" : "Monthly trend"} · {currentLabel}
+        </Text>
         <View style={styles.legendCompact}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
             <View style={[styles.legendDot, { backgroundColor: colors.brandPrimary }]} />
@@ -287,27 +335,31 @@ export default function AnalyticsScreen() {
           <Text style={[styles.legendCompactText, { marginLeft: "auto" }]}>values in {currency.symbol}K</Text>
         </View>
         <View style={{ marginTop: 8, alignItems: "flex-start" }}>
-          <BarChart
-            data={trendData.data}
-            barWidth={10}
-            spacing={12}
-            initialSpacing={6}
-            endSpacing={6}
-            noOfSections={4}
-            maxValue={Math.max(trendData.max + 5, 20)}
-            yAxisTextStyle={{ color: colors.muted, fontSize: 10 }}
-            xAxisLabelTextStyle={{ color: colors.muted, fontSize: 10 }}
-            xAxisColor={colors.border}
-            yAxisColor={colors.border}
-            rulesColor={colors.divider}
-            rulesType="dashed"
-            hideRules={false}
-            barBorderRadius={3}
-            width={chartWidth}
-            disableScroll
-            adjustToWidth
-            yAxisLabelWidth={26}
-          />
+          {trendData.buckets === 0 ? (
+            <EmptyState icon="bar-chart-outline" title="No data" subtitle="Try a wider date range" />
+          ) : (
+            <BarChart
+              data={trendData.data}
+              barWidth={dynamicBarWidth}
+              spacing={dynamicSpacing}
+              initialSpacing={6}
+              endSpacing={6}
+              noOfSections={4}
+              maxValue={Math.max(trendData.max + 5, 20)}
+              yAxisTextStyle={{ color: colors.muted, fontSize: 10 }}
+              xAxisLabelTextStyle={{ color: colors.muted, fontSize: 9 }}
+              xAxisColor={colors.border}
+              yAxisColor={colors.border}
+              rulesColor={colors.divider}
+              rulesType="dashed"
+              hideRules={false}
+              barBorderRadius={3}
+              width={chartWidth}
+              disableScroll
+              adjustToWidth
+              yAxisLabelWidth={26}
+            />
+          )}
         </View>
       </View>
 

@@ -212,25 +212,33 @@ export default function BudgetsScreen() {
                 {goals.map((g) => {
                   const pct = Math.min(100, (g.saved / g.target) * 100);
                   return (
-                    <Pressable
-                      key={g.id}
-                      testID={`goal-item-${g.id}`}
-                      onPress={() => router.push({ pathname: "/goals", params: { edit: g.id } })}
-                      style={styles.goalCard}
-                    >
-                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.goalTitle}>{g.title}</Text>
-                          <Text style={styles.goalSub}>
-                            {formatMoney(g.saved, currency)} <Text style={{ color: colors.muted }}>saved of {formatMoney(g.target, currency)}</Text>
-                          </Text>
+                    <View key={g.id} style={styles.goalCard}>
+                      <Pressable
+                        testID={`goal-item-${g.id}`}
+                        onPress={() => router.push({ pathname: "/goals", params: { edit: g.id } })}
+                      >
+                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.goalTitle}>{g.title}</Text>
+                            <Text style={styles.goalSub}>
+                              {formatMoney(g.saved, currency)} <Text style={{ color: colors.muted }}>saved of {formatMoney(g.target, currency)}</Text>
+                            </Text>
+                          </View>
+                          <View style={styles.goalPctBadge}>
+                            <Text style={styles.goalPctText}>{Math.round(pct)}%</Text>
+                          </View>
                         </View>
-                        <View style={styles.goalPctBadge}>
-                          <Text style={styles.goalPctText}>{Math.round(pct)}%</Text>
-                        </View>
-                      </View>
-                      <BudgetBar spent={g.saved} limit={g.target} color={colors.brandPrimary} />
-                    </Pressable>
+                        <BudgetBar spent={g.saved} limit={g.target} color={colors.brandPrimary} />
+                      </Pressable>
+                      <Pressable
+                        testID={`goal-add-funds-${g.id}`}
+                        onPress={() => router.push({ pathname: "/goals", params: { add: g.id } })}
+                        style={styles.goalAddFundsBtn}
+                      >
+                        <Ionicons name="add-circle" size={14} color={colors.brand} />
+                        <Text style={styles.goalAddFundsText}>Add funds</Text>
+                      </Pressable>
+                    </View>
                   );
                 })}
               </View>
@@ -424,6 +432,18 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
   },
   goalPctText: { fontSize: 12, color: colors.brand, fontWeight: "800" },
+  goalAddFundsBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    alignSelf: "flex-start",
+    backgroundColor: colors.brandTertiary,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    marginTop: 10,
+  },
+  goalAddFundsText: { fontSize: 11, color: colors.brand, fontWeight: "800" },
   sheet: {
     backgroundColor: colors.surfaceSecondary,
     borderTopLeftRadius: 24,

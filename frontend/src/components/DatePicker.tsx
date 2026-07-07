@@ -1,8 +1,11 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, StyleSheet, Modal, Pressable } from "react-native";
+import { View, Text, StyleSheet, Modal, Pressable, Dimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Calendar } from "react-native-calendars";
 import { colors, radius, spacing } from "@/src/theme";
+
+const { height: SCREEN_H } = Dimensions.get("window");
+const SHEET_HEIGHT = Math.round(SCREEN_H * 0.8);
 
 function ymd(d: Date): string {
   const y = d.getFullYear();
@@ -50,7 +53,7 @@ export function DatePickerModal({
 }) {
   const selected = ymd(value);
   return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
+    <Modal transparent visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <Pressable style={{ flex: 1 }} onPress={onClose} />
         <View style={styles.sheet}>
@@ -139,44 +142,8 @@ export function RangePickerModal({
     onClose();
   };
 
-  const preset = (days: number, label: string) => (
-    <Pressable
-      key={label}
-      testID={`range-preset-${label.toLowerCase().replace(/\s+/g, "-")}`}
-      onPress={() => {
-        const end = new Date();
-        const start = new Date();
-        start.setDate(end.getDate() - days + 1);
-        setTempFrom(ymd(start));
-        setTempTo(ymd(end));
-        setSelectingEnd(false);
-      }}
-      style={styles.presetChip}
-    >
-      <Text style={styles.presetChipText}>{label}</Text>
-    </Pressable>
-  );
-
-  const presetMonth = (offset: number, label: string) => (
-    <Pressable
-      key={label}
-      testID={`range-preset-${label.toLowerCase().replace(/\s+/g, "-")}`}
-      onPress={() => {
-        const now = new Date();
-        const start = new Date(now.getFullYear(), now.getMonth() + offset, 1);
-        const end = new Date(now.getFullYear(), now.getMonth() + offset + 1, 0);
-        setTempFrom(ymd(start));
-        setTempTo(ymd(end));
-        setSelectingEnd(false);
-      }}
-      style={styles.presetChip}
-    >
-      <Text style={styles.presetChipText}>{label}</Text>
-    </Pressable>
-  );
-
   return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
+    <Modal transparent visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <Pressable style={{ flex: 1 }} onPress={onClose} />
         <View style={styles.sheet}>
@@ -228,13 +195,6 @@ export function RangePickerModal({
             enableSwipeMonths
           />
 
-          <View style={styles.presetRow}>
-            {preset(7, "Last 7")}
-            {preset(30, "Last 30")}
-            {presetMonth(0, "This month")}
-            {presetMonth(-1, "Last month")}
-          </View>
-
           <View style={styles.actionRow}>
             <Pressable testID="range-cancel" style={[styles.actionBtn, styles.actionGhost]} onPress={onClose}>
               <Text style={styles.actionGhostText}>Cancel</Text>
@@ -262,6 +222,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: 10,
     paddingBottom: 24,
+    height: SHEET_HEIGHT,
   },
   sheetHandle: {
     width: 40,
@@ -307,18 +268,6 @@ const styles = StyleSheet.create({
   },
   rangeValue: { fontSize: 13, color: colors.onSurface, fontWeight: "800", marginTop: 2 },
   helpText: { fontSize: 11, color: colors.muted, textAlign: "center", marginBottom: 4 },
-  presetRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 12 },
-  presetChip: {
-    paddingHorizontal: 12,
-    height: 32,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceTertiary,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  presetChipText: { fontSize: 11, color: colors.onSurface, fontWeight: "600" },
   actionRow: { flexDirection: "row", gap: 10, marginTop: 16 },
   actionBtn: {
     flex: 1,

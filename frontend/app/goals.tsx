@@ -22,14 +22,21 @@ import { getGoals, addGoal, updateGoal, deleteGoal, Goal } from "@/src/store";
 import { EmptyState } from "@/src/components/CategoryIcon";
 import { useCurrency } from "@/src/currency";
 
+type EditModal =
+  | { kind: "none" }
+  | { kind: "new" }
+  | { kind: "edit"; goal: Goal }
+  | { kind: "add-funds"; goal: Goal };
+
 export default function Goals() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { currency } = useCurrency();
-  const params = useLocalSearchParams<{ edit?: string }>();
+  const params = useLocalSearchParams<{ edit?: string; add?: string }>();
   const [goals, setGoals] = useState<Goal[]>([]);
-  const [modal, setModal] = useState<{ visible: boolean; goal?: Goal }>({ visible: false });
+  const [modal, setModal] = useState<EditModal>({ kind: "none" });
   const [form, setForm] = useState({ title: "", target: "", saved: "" });
+  const [contribution, setContribution] = useState("");
 
   const load = useCallback(async () => {
     const g = await getGoals();
@@ -37,19 +44,27 @@ export default function Goals() {
     if (params.edit) {
       const found = g.find((x) => x.id === params.edit);
       if (found) openEdit(found);
+    } else if (params.add) {
+      const found = g.find((x) => x.id === params.add);
+      if (found) openAddFunds(found);
     }
-  }, [params.edit]);
+  }, [params.edit, params.add]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const openNew = () => {
-    setModal({ visible: true });
     setForm({ title: "", target: "", saved: "" });
+    setModal({ kind: "new" });
   };
   const openEdit = (g: Goal) => {
-    setModal({ visible: true, goal: g });
     setForm({ title: g.title, target: String(g.target), saved: String(g.saved) });
+    setModal({ kind: "edit", goal: g });
   };
+  const openAddFunds = (g: Goal) => {
+    setContribution("");
+    setModal({ kind: "add-funds", goal: g });
+  };
+  const closeModal = () => setModal({ kind: "none" });
 
   const submit = async () => {
     const target = Number(form.target);
@@ -58,13 +73,27 @@ export default function Goals() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
     }
-    if (modal.goal) {
+    if (modal.kind === "edit") {
       await updateGoal(modal.goal.id, { title: form.title.trim(), target, saved });
     } else {
       await addGoal({ title: form.title.trim(), target, saved });
     }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setModal({ visible: false });
+    closeModal();
+    load();
+  };
+
+  const applyContribution = async () => {
+    if (modal.kind !== "add-funds") return;
+    const amt = Number(contribution);
+    if (!amt || amt <= 0) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
+    const newSaved = modal.goal.saved + amt;
+    await updateGoal(modal.goal.id, { saved: newSaved });
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    closeModal();
     load();
   };
 
@@ -89,6 +118,14 @@ export default function Goals() {
     return { target, saved };
   }, [goals]);
 
+  const contributionPreview = useMemo(() => {
+    if (modal.kind !== "add-funds") return null;
+    const amt = Number(contribution) || 0;
+    const newSaved = modal.goal.saved + amt;
+    const pct = Math.min(100, (newSaved / modal.goal.target) * 100);
+    return { newSaved, pct };
+  }, [contribution, modal]);
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
@@ -108,7 +145,7 @@ export default function Goals() {
             <Text style={styles.summarySaved}>{formatMoney(totals.saved, currency)}</Text>
             <Text style={styles.summaryOf}>of {formatMoney(totals.target, currency)}</Text>
           </View>
-          <Bar value={totals.saved} max={totals.target || 1} />
+          <Bar value={totals.saved} max={totals.target || 1} onDark />
           <Text style={styles.summaryHint}>
             {goals.length === 0 ? "Tap + to create your first goal" : `${goals.length} active goal${goals.length > 1 ? "s" : ""}`}
           </Text>
@@ -135,7 +172,16 @@ export default function Goals() {
                     <Text style={styles.goalPct}>{Math.round(pct)}%</Text>
                   </View>
                   <Bar value={g.saved} max={g.target} />
+
                   <View style={styles.goalActions}>
+                    <Pressable
+                      testID={`add-funds-${g.id}`}
+                      onPress={() => openAddFunds(g)}
+                      style={[styles.goalBtn, styles.goalBtnPrimary]}
+                    >
+                      <Ionicons name="add-circle" size={14} color="#fff" />
+                      <Text style={[styles.goalBtnText, { color: "#fff" }]}>Add funds</Text>
+                    </Pressable>
                     <Pressable testID={`edit-goal-${g.id}`} onPress={() => openEdit(g)} style={styles.goalBtn}>
                       <Ionicons name="create-outline" size={14} color={colors.onSurface} />
                       <Text style={styles.goalBtnText}>Edit</Text>
@@ -152,58 +198,146 @@ export default function Goals() {
         )}
       </ScrollView>
 
-      <Modal transparent visible={modal.visible} animationType="fade" onRequestClose={() => setModal({ visible: false })}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" }}>
-          <Pressable style={{ flex: 1 }} onPress={() => setModal({ visible: false })} />
+      {/* Modal — new / edit / add-funds */}
+      <Modal transparent visible={modal.kind !== "none"} animationType="slide" onRequestClose={closeModal}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" }}
+        >
+          <Pressable style={{ flex: 1 }} onPress={closeModal} />
           <View style={styles.sheet}>
             <View style={styles.sheetHandle} />
-            <Text style={styles.sheetTitle}>{modal.goal ? "Edit goal" : "New goal"}</Text>
 
-            <Text style={styles.formLabel}>Title</Text>
-            <TextInput
-              testID="goal-title-input"
-              value={form.title}
-              onChangeText={(v) => setForm({ ...form, title: v })}
-              placeholder="Emergency fund"
-              placeholderTextColor={colors.muted}
-              style={styles.input}
-            />
+            {modal.kind === "add-funds" ? (
+              <>
+                <Text style={styles.sheetTitle}>Add funds to goal</Text>
+                <Text style={styles.sheetSub}>{modal.goal.title}</Text>
 
-            <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.formLabel}>Target (₹)</Text>
+                <View style={styles.currentCard}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.currentLabel}>CURRENT</Text>
+                    <Text style={styles.currentValue}>{formatMoney(modal.goal.saved, currency)}</Text>
+                  </View>
+                  <Ionicons name="arrow-forward" size={16} color={colors.brand} />
+                  <View style={{ flex: 1, alignItems: "flex-end" }}>
+                    <Text style={styles.currentLabel}>AFTER</Text>
+                    <Text style={[styles.currentValue, { color: colors.brand }]}>
+                      {formatMoney(contributionPreview?.newSaved || modal.goal.saved, currency)}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={styles.formLabel}>Amount to add ({currency.symbol})</Text>
                 <TextInput
-                  testID="goal-target-input"
-                  value={form.target}
-                  onChangeText={(v) => setForm({ ...form, target: v.replace(/[^0-9]/g, "") })}
-                  placeholder="100000"
+                  testID="contribution-input"
+                  value={contribution}
+                  onChangeText={(v) => setContribution(v.replace(/[^0-9]/g, ""))}
+                  placeholder="5000"
                   placeholderTextColor={colors.muted}
                   keyboardType="numeric"
                   style={styles.input}
+                  autoFocus
                 />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.formLabel}>Saved so far (₹)</Text>
+
+                <View style={styles.quickAmountRow}>
+                  {[500, 1000, 5000, 10000].map((n) => (
+                    <Pressable
+                      key={n}
+                      testID={`quick-add-${n}`}
+                      onPress={() => {
+                        Haptics.selectionAsync();
+                        setContribution(String(n));
+                      }}
+                      style={styles.quickAmountChip}
+                    >
+                      <Text style={styles.quickAmountText}>+{formatMoney(n, currency)}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                {contributionPreview && (
+                  <View style={{ marginTop: 14 }}>
+                    <View style={{ height: 8, backgroundColor: colors.surfaceTertiary, borderRadius: 999, overflow: "hidden" }}>
+                      <View style={{ width: `${contributionPreview.pct}%`, height: "100%", backgroundColor: colors.brandPrimary, borderRadius: 999 }} />
+                    </View>
+                    <Text style={styles.progressText}>
+                      {contributionPreview.pct.toFixed(0)}% of goal after this contribution
+                    </Text>
+                  </View>
+                )}
+
+                <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+                  <Pressable style={[styles.btn, styles.btnGhost]} onPress={closeModal}>
+                    <Text style={styles.btnGhostText}>Cancel</Text>
+                  </Pressable>
+                  <Pressable
+                    testID="add-funds-save-btn"
+                    style={[styles.btn, styles.btnPrimary, { opacity: !contribution ? 0.5 : 1 }]}
+                    onPress={applyContribution}
+                    disabled={!contribution}
+                  >
+                    <Ionicons name="checkmark-circle" size={16} color="#fff" />
+                    <Text style={styles.btnPrimaryText}>Add contribution</Text>
+                  </Pressable>
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={styles.sheetTitle}>{modal.kind === "edit" ? "Edit goal" : "New goal"}</Text>
+
+                <Text style={styles.formLabel}>Title</Text>
                 <TextInput
-                  testID="goal-saved-input"
-                  value={form.saved}
-                  onChangeText={(v) => setForm({ ...form, saved: v.replace(/[^0-9]/g, "") })}
-                  placeholder="0"
+                  testID="goal-title-input"
+                  value={form.title}
+                  onChangeText={(v) => setForm({ ...form, title: v })}
+                  placeholder="Emergency fund"
                   placeholderTextColor={colors.muted}
-                  keyboardType="numeric"
                   style={styles.input}
                 />
-              </View>
-            </View>
 
-            <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
-              <Pressable style={[styles.btn, styles.btnGhost]} onPress={() => setModal({ visible: false })}>
-                <Text style={styles.btnGhostText}>Cancel</Text>
-              </Pressable>
-              <Pressable testID="goal-save-btn" style={[styles.btn, styles.btnPrimary]} onPress={submit}>
-                <Text style={styles.btnPrimaryText}>{modal.goal ? "Save changes" : "Create goal"}</Text>
-              </Pressable>
-            </View>
+                <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.formLabel}>Target ({currency.symbol})</Text>
+                    <TextInput
+                      testID="goal-target-input"
+                      value={form.target}
+                      onChangeText={(v) => setForm({ ...form, target: v.replace(/[^0-9]/g, "") })}
+                      placeholder="100000"
+                      placeholderTextColor={colors.muted}
+                      keyboardType="numeric"
+                      style={styles.input}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.formLabel}>Saved ({currency.symbol})</Text>
+                    <TextInput
+                      testID="goal-saved-input"
+                      value={form.saved}
+                      onChangeText={(v) => setForm({ ...form, saved: v.replace(/[^0-9]/g, "") })}
+                      placeholder="0"
+                      placeholderTextColor={colors.muted}
+                      keyboardType="numeric"
+                      style={styles.input}
+                    />
+                  </View>
+                </View>
+
+                {modal.kind === "edit" && (
+                  <Text style={styles.editHint}>
+                    Tip: use <Text style={{ fontWeight: "800", color: colors.brand }}>Add funds</Text> from the goal card to add to your saved amount instead of overwriting.
+                  </Text>
+                )}
+
+                <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+                  <Pressable style={[styles.btn, styles.btnGhost]} onPress={closeModal}>
+                    <Text style={styles.btnGhostText}>Cancel</Text>
+                  </Pressable>
+                  <Pressable testID="goal-save-btn" style={[styles.btn, styles.btnPrimary]} onPress={submit}>
+                    <Text style={styles.btnPrimaryText}>{modal.kind === "edit" ? "Save changes" : "Create goal"}</Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
             <View style={{ height: insets.bottom + 8 }} />
           </View>
         </KeyboardAvoidingView>
@@ -212,11 +346,26 @@ export default function Goals() {
   );
 }
 
-function Bar({ value, max }: { value: number; max: number }) {
+function Bar({ value, max, onDark = false }: { value: number; max: number; onDark?: boolean }) {
   const pct = Math.min(100, (value / max) * 100);
   return (
-    <View style={{ height: 8, backgroundColor: colors.surfaceTertiary, borderRadius: 999, overflow: "hidden", marginTop: 8 }}>
-      <View style={{ width: `${pct}%`, height: "100%", backgroundColor: colors.brandPrimary, borderRadius: 999 }} />
+    <View
+      style={{
+        height: 8,
+        backgroundColor: onDark ? "rgba(255,255,255,0.18)" : colors.surfaceTertiary,
+        borderRadius: 999,
+        overflow: "hidden",
+        marginTop: 8,
+      }}
+    >
+      <View
+        style={{
+          width: `${pct}%`,
+          height: "100%",
+          backgroundColor: onDark ? "#B7E4C7" : colors.brandPrimary,
+          borderRadius: 999,
+        }}
+      />
     </View>
   );
 }
@@ -273,10 +422,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 4,
     backgroundColor: colors.surfaceTertiary,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: radius.pill,
   },
+  goalBtnPrimary: { backgroundColor: colors.brand },
   goalBtnText: { fontSize: 11, color: colors.onSurface, fontWeight: "700" },
   sheet: {
     backgroundColor: colors.surfaceSecondary,
@@ -292,7 +442,30 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     marginBottom: 12,
   },
-  sheetTitle: { fontSize: 18, fontWeight: "800", color: colors.onSurface, marginBottom: 12 },
+  sheetTitle: { fontSize: 18, fontWeight: "800", color: colors.onSurface },
+  sheetSub: { fontSize: 12, color: colors.muted, marginTop: 2, marginBottom: 8 },
+  currentCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 12,
+    backgroundColor: colors.brandTertiary,
+    borderRadius: radius.md,
+    marginTop: 12,
+    marginBottom: 12,
+  },
+  currentLabel: {
+    fontSize: 10,
+    color: colors.brand,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+  },
+  currentValue: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: colors.onSurface,
+    marginTop: 2,
+  },
   formLabel: {
     fontSize: 11,
     color: colors.muted,
@@ -311,12 +484,41 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     fontWeight: "600",
   },
+  quickAmountRow: {
+    flexDirection: "row",
+    gap: 6,
+    marginTop: 10,
+    flexWrap: "wrap",
+  },
+  quickAmountChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brandTertiary,
+    borderWidth: 1,
+    borderColor: colors.brandTertiary,
+  },
+  quickAmountText: { fontSize: 11, color: colors.brand, fontWeight: "700" },
+  progressText: {
+    fontSize: 11,
+    color: colors.muted,
+    marginTop: 6,
+    fontWeight: "600",
+  },
+  editHint: {
+    fontSize: 11,
+    color: colors.muted,
+    marginTop: 12,
+    lineHeight: 16,
+  },
   btn: {
     flex: 1,
     height: 48,
     borderRadius: radius.pill,
     alignItems: "center",
     justifyContent: "center",
+    flexDirection: "row",
+    gap: 6,
   },
   btnGhost: { backgroundColor: colors.surfaceTertiary },
   btnGhostText: { color: colors.onSurface, fontWeight: "700" },
