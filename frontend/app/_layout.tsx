@@ -53,10 +53,6 @@ export default function RootLayout() {
                 options={{ presentation: "modal", animation: "slide_from_bottom" }}
               />
               <Stack.Screen
-                name="paste-sms"
-                options={{ presentation: "modal", animation: "slide_from_bottom" }}
-              />
-              <Stack.Screen
                 name="settings"
                 options={{ presentation: "card", animation: "slide_from_right" }}
               />

@@ -140,7 +140,7 @@ export default function Settings() {
             color={colors.warning}
             title="Scan SMS message"
             value="Auto-add from bank alerts"
-            onPress={() => router.push("/paste-sms")}
+            onPress={() => router.push("/add-transaction?mode=sms")}
           />
           <SettingRow
             testID="settings-goals"

@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 3 verification of Aura Wealth (Expo). Frontend-only testing via Playwright on mobile viewport 390x844. All Fix #1a/1b/1c, #2a/2b/2c/2d and regressions PASS. Fix #1d has a spec deviation: when a merchant is detected but category is not, banner shows 'SMS detected' (high confidence) instead of 'Partial match — please fill in category', and the save button remains ENABLED because AddTransaction's useEffect auto-preselects the first category of the resolved type when categoryId is null. paste-sms.tsx removed as required. Old preset chips (date-0..7, range-this_month/last_month/etc) absent. RangePickerModal, DatePickerModal (react-native-calendars) and mode toggle all wired correctly. Currency switch (Settings > cur-USD) propagates to Home balance ($). 4-column category grid confirmed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "add-transaction.tsx (SMS banner)", "issue": "Fix #1d: For payload 'Rs 500 debited at RANDOMSTORE', regex detects amount(500), type(expense) AND merchant(RANDOMSTORE) => 3 hits => confidence='high' => banner text is 'SMS detected — please confirm the details'. Requirement expects 'Partial match — please fill in category' whenever the category is missing. Banner logic should key on smsBanner.missing.length>0 (or missing.includes('category')) rather than solely on confidence. Reference: /app/frontend/app/add-transaction.tsx:258-262", "testID": "sms banner", "priority": "MEDIUM"},
+      {"component": "add-transaction.tsx (save enable)", "issue": "Fix #1d: save-tx-btn is NOT disabled after detecting SMS with unknown category. Root cause: the useEffect at lines 62-70 auto-picks the first category of the current type whenever categoryId is null, so after detectSms runs, categoryId is populated by the effect. Requirement expects save disabled until user taps a cat-* chip. Recommend tracking a flag like 'smsMissingCategory' that suppresses the auto-selection (or clear categoryId in detectSms when parsed.suggestedCategoryId is null and skip the fallback effect while smsBanner.missing includes 'category'). Reference: /app/frontend/app/add-transaction.tsx:62-70, 82-93, 388", "testID": "save-tx-btn", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow props", "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Emitted by shadow.card / shadow.fab in /app/frontend/src/theme.* used across screens. Non-blocking but should migrate to boxShadow / react-native's newer shadow API."},
+      {"component": "pointerEvents prop", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents.' Likely from a third-party (gifted-charts / calendars). Investigate consumers and pass via style."},
+      {"component": "Image tintColor", "issue": "Console warning: 'Image: style.tintColor is deprecated. Please use props.tintColor.' Coming from Ionicons/react-native-calendars asset. Non-blocking."},
+      {"component": "TouchableWithoutFeedback", "issue": "Console warning: 'TouchableWithoutFeedback is deprecated. Please use Pressable.' Coming from react-native-calendars internal. External lib — track upstream."}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Fix #1d banner text: base wording on smsBanner.missing (e.g. if missing.length>0 render 'Partial match — please fill in <missing>' regardless of confidence).",
+    "Fix #1d save enablement: prevent auto-selecting a fallback category when SMS parse leaves category missing. Options: (a) set a state 'requireCategory' true when parsed.suggestedCategoryId is null and gate the fallback useEffect on it; (b) clear categoryId in detectSms and skip the effect until the user taps a chip."
+  ],
+  "critical_code_review_comments": [
+    "add-transaction.tsx: dateLabel uses toLocaleDateString – locale-dependent output; acceptable but ensure tests do not hard-match 'Mon, 6 Jul 2026'.",
+    "DatePicker.tsx: RangePickerModal loops up to 400 days to build marked dates – fine but could be O(n) on very long ranges; consider capping earlier.",
+    "sms-parser.ts: AMOUNT_RE will match currency prefix + integer only, so 'Rs 500' is captured; good.",
+    "index.tsx: qa-scan-sms passes ?mode=sms which is honored by AddTransaction via useLocalSearchParams; verified.",
+    "_layout.tsx: paste-sms Stack.Screen removed; verified. paste-sms.tsx file absent."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only)", "frontend": "~90% (2 sub-checks of Fix #1d failed; rest passed)"},
+  "seed_data_creation": "None. Sample data auto-seeded by seedIfNeeded() on first launch.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Frontend URL: https://spending-dashboard-47.preview.emergentagent.com. Use viewport 390x844. To test Fix #1d again, paste 'Rs 500 debited at RANDOMSTORE' in sms-textarea and click detect-btn; verify (a) banner starts with 'Partial match' and (b) save-tx-btn is disabled until a cat-* chip is tapped. Cat prefix in DOM is 'cat-cat-<id>' (e.g. cat-cat-food) because store category IDs already begin with 'cat-'.",
+  "rca_of_issue": "Fix #1d fails because: (1) banner branching uses smsBanner.confidence==='high' rather than checking whether missing fields exist. For messages that have amount+type+merchant detectable (3 hits) but no category match, confidence becomes 'high' and the reassuring copy is shown instead of the 'Partial match' prompt. (2) The categoryId fallback useEffect (lines 62-70) always assigns the first category of the active type when categoryId is null, so even though parseSms returns suggestedCategoryId=null, the effect fills it in and save-tx-btn's disabled prop (!amount || !categoryId) evaluates to false."
+}

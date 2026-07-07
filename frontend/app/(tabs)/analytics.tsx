@@ -7,54 +7,35 @@ import * as Haptics from "expo-haptics";
 import { PieChart, BarChart } from "react-native-gifted-charts";
 
 import { colors, radius, spacing, shadow } from "@/src/theme";
-import { formatMoney, currentMonthKey, monthLabel } from "@/src/utils/format";
+import { formatMoney } from "@/src/utils/format";
 import { getTransactions, getCategories, Transaction, Category } from "@/src/store";
 import { EmptyState } from "@/src/components/CategoryIcon";
 import { useCurrency } from "@/src/currency";
+import { RangePickerModal } from "@/src/components/DatePicker";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
-type RangeKey =
-  | "this_month"
-  | "last_month"
-  | "last_3m"
-  | "last_6m"
-  | "this_year"
-  | "all_time";
-
-const RANGES: { key: RangeKey; label: string }[] = [
-  { key: "this_month", label: "This month" },
-  { key: "last_month", label: "Last month" },
-  { key: "last_3m", label: "Last 3 months" },
-  { key: "last_6m", label: "Last 6 months" },
-  { key: "this_year", label: "This year" },
-  { key: "all_time", label: "All time" },
-];
-
-function rangeBounds(key: RangeKey): { from: Date; to: Date; label: string } {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  const startOfMonth = (dy: number, dm: number) => new Date(dy, dm, 1);
-  const endOfMonth = (dy: number, dm: number) => new Date(dy, dm + 1, 0, 23, 59, 59, 999);
-
-  switch (key) {
-    case "this_month":
-      return { from: startOfMonth(y, m), to: endOfMonth(y, m), label: monthLabel(currentMonthKey()) };
-    case "last_month": {
-      const from = startOfMonth(y, m - 1);
-      return { from, to: endOfMonth(y, m - 1), label: from.toLocaleDateString(undefined, { month: "long", year: "numeric" }) };
+function startOfMonth(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+function endOfMonth(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+}
+function fmtDay(d: Date) {
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+function rangeLabel(from: Date, to: Date): string {
+  // Same month
+  if (from.getFullYear() === to.getFullYear() && from.getMonth() === to.getMonth()) {
+    const som = new Date(from.getFullYear(), from.getMonth(), 1);
+    const eom = new Date(from.getFullYear(), from.getMonth() + 1, 0);
+    if (from.getTime() === som.getTime() && to.toDateString() === eom.toDateString()) {
+      return from.toLocaleDateString(undefined, { month: "long", year: "numeric" });
     }
-    case "last_3m":
-      return { from: startOfMonth(y, m - 2), to: endOfMonth(y, m), label: "Last 3 months" };
-    case "last_6m":
-      return { from: startOfMonth(y, m - 5), to: endOfMonth(y, m), label: "Last 6 months" };
-    case "this_year":
-      return { from: new Date(y, 0, 1), to: new Date(y, 11, 31, 23, 59, 59, 999), label: `${y}` };
-    case "all_time":
-    default:
-      return { from: new Date(2000, 0, 1), to: new Date(2999, 11, 31), label: "All time" };
   }
+  const days = Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
+  if (days <= 31) return `${fmtDay(from)} → ${fmtDay(to)}`;
+  return `${fmtDay(from)} — ${fmtDay(to)}`;
 }
 
 export default function AnalyticsScreen() {
@@ -62,7 +43,9 @@ export default function AnalyticsScreen() {
   const { currency } = useCurrency();
   const [txs, setTxs] = useState<Transaction[]>([]);
   const [cats, setCats] = useState<Category[]>([]);
-  const [rangeKey, setRangeKey] = useState<RangeKey>("this_month");
+  const [from, setFrom] = useState<Date>(startOfMonth(new Date()));
+  const [to, setTo] = useState<Date>(endOfMonth(new Date()));
+  const [picking, setPicking] = useState(false);
   const [viewType, setViewType] = useState<"expense" | "income" | "investment">("expense");
 
   const load = useCallback(async () => {
@@ -79,16 +62,14 @@ export default function AnalyticsScreen() {
 
   const catMap = useMemo(() => new Map(cats.map((c) => [c.id, c])), [cats]);
 
-  const range = useMemo(() => rangeBounds(rangeKey), [rangeKey]);
-
   const rangedTxs = useMemo(() => {
-    const fromMs = range.from.getTime();
-    const toMs = range.to.getTime();
+    const fromMs = new Date(from.getFullYear(), from.getMonth(), from.getDate()).getTime();
+    const toMs = new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59, 999).getTime();
     return txs.filter((t) => {
       const ts = new Date(t.date).getTime();
       return ts >= fromMs && ts <= toMs;
     });
-  }, [txs, range]);
+  }, [txs, from, to]);
 
   const totals = useMemo(() => {
     let income = 0,
@@ -125,7 +106,7 @@ export default function AnalyticsScreen() {
       .sort((a, b) => b.value - a.value);
   }, [rangedTxs, viewType, catMap]);
 
-  // Monthly trend: last 6 months income vs expense (independent of the range selector)
+  // Trend: last 6 months (independent of selected range)
   const trendData = useMemo(() => {
     const now = new Date();
     const y = now.getFullYear();
@@ -162,10 +143,8 @@ export default function AnalyticsScreen() {
     return { data: barData, max: Math.ceil(maxVal / 1000) };
   }, [txs]);
 
-  // Chart width: fits within card without horizontal scroll.
-  // Card horizontal padding = 16 on each side. Screen padding = 16 on each side.
-  // Bar area width available ≈ screen - 32 (screen padding) - 32 (card padding) - 30 (y-axis label buffer)
   const chartWidth = Math.max(220, SCREEN_W - 32 - 32 - 30);
+  const currentLabel = rangeLabel(from, to);
 
   return (
     <ScrollView
@@ -181,31 +160,26 @@ export default function AnalyticsScreen() {
         </View>
       </View>
 
-      {/* Date range chips */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.rangeRow}
+      {/* Range card — tap to open calendar */}
+      <Pressable
+        testID="range-picker-btn"
+        onPress={() => {
+          Haptics.selectionAsync();
+          setPicking(true);
+        }}
+        style={styles.rangeCard}
       >
-        {RANGES.map((r) => {
-          const active = rangeKey === r.key;
-          return (
-            <Pressable
-              key={r.key}
-              testID={`range-${r.key}`}
-              onPress={() => {
-                Haptics.selectionAsync();
-                setRangeKey(r.key);
-              }}
-              style={[styles.rangeChip, active && styles.rangeChipActive]}
-            >
-              <Text style={[styles.rangeText, active && styles.rangeTextActive]}>{r.label}</Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-
-      <Text style={styles.rangeCaption}>{range.label}</Text>
+        <View style={styles.rangeIcon}>
+          <Ionicons name="calendar" size={16} color={colors.brand} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.rangeSub}>Showing data for</Text>
+          <Text style={styles.rangeLabel} numberOfLines={1}>
+            {currentLabel}
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+      </Pressable>
 
       {/* Summary tiles */}
       <View style={styles.tilesRow}>
@@ -232,7 +206,7 @@ export default function AnalyticsScreen() {
         />
       </View>
 
-      {/* View type toggle — full-width row, no horizontal scroll */}
+      {/* View type toggle */}
       <View style={styles.viewSwitch}>
         {(["expense", "income", "investment"] as const).map((v) => {
           const active = viewType === v;
@@ -258,7 +232,7 @@ export default function AnalyticsScreen() {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Category breakdown</Text>
         {pieData.length === 0 ? (
-          <EmptyState icon="pie-chart-outline" title="No data" subtitle={`No ${viewType} for ${range.label}`} />
+          <EmptyState icon="pie-chart-outline" title="No data" subtitle={`No ${viewType} for ${currentLabel}`} />
         ) : (
           <>
             <View style={styles.donutWrap}>
@@ -298,7 +272,7 @@ export default function AnalyticsScreen() {
         )}
       </View>
 
-      {/* Trend chart — 6 month income vs expense, fits screen (no horizontal scroll) */}
+      {/* Trend chart */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>6-month trend</Text>
         <View style={styles.legendCompact}>
@@ -336,6 +310,19 @@ export default function AnalyticsScreen() {
           />
         </View>
       </View>
+
+      <RangePickerModal
+        visible={picking}
+        from={from}
+        to={to}
+        onClose={() => setPicking(false)}
+        onChange={(f, t) => {
+          setFrom(f);
+          setTo(t);
+        }}
+        maxDate={new Date()}
+        title="Analytics range"
+      />
     </ScrollView>
   );
 }
@@ -382,41 +369,39 @@ const styles = StyleSheet.create({
     color: colors.muted,
     marginTop: 2,
   },
-  rangeRow: {
-    gap: 8,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 12,
-  },
-  rangeChip: {
-    height: 34,
-    paddingHorizontal: 12,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceSecondary,
+  rangeCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginHorizontal: spacing.lg,
+    marginTop: 16,
+    padding: 14,
+    borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
+    ...shadow.card,
+  },
+  rangeIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.brandTertiary,
+    alignItems: "center",
     justifyContent: "center",
-    flexShrink: 0,
   },
-  rangeChipActive: {
-    backgroundColor: colors.brand,
-    borderColor: colors.brand,
-  },
-  rangeText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.onSurface,
-  },
-  rangeTextActive: {
-    color: "#fff",
+  rangeSub: {
+    fontSize: 10,
+    color: colors.muted,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
     fontWeight: "700",
   },
-  rangeCaption: {
-    marginHorizontal: spacing.lg,
-    marginTop: -2,
-    marginBottom: 4,
-    fontSize: 12,
-    color: colors.muted,
-    fontWeight: "600",
+  rangeLabel: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: colors.onSurface,
+    marginTop: 2,
   },
   tilesRow: {
     flexDirection: "row",

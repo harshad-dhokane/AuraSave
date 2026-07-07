@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, TextInput, Platform } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -8,52 +8,29 @@ import * as Haptics from "expo-haptics";
 import { colors, radius, spacing, shadow } from "@/src/theme";
 import { formatMoney } from "@/src/utils/format";
 import { getTransactions, getCategories, Transaction, Category } from "@/src/store";
-import { buildCsv, exportCsv, ExportRange, filterByRange } from "@/src/utils/export";
+import { buildCsv, exportCsv, filterByRange } from "@/src/utils/export";
 import { useCurrency } from "@/src/currency";
 import { EmptyState } from "@/src/components/CategoryIcon";
+import { RangePickerModal } from "@/src/components/DatePicker";
 
-type PresetKey = "this_month" | "last_month" | "last_3m" | "last_6m" | "this_year" | "all_time" | "custom";
-
-const PRESETS: { key: PresetKey; label: string }[] = [
-  { key: "this_month", label: "This month" },
-  { key: "last_month", label: "Last month" },
-  { key: "last_3m", label: "Last 3 months" },
-  { key: "last_6m", label: "Last 6 months" },
-  { key: "this_year", label: "This year" },
-  { key: "all_time", label: "All time" },
-  { key: "custom", label: "Custom" },
-];
-
-function presetRange(key: PresetKey, custom: { from: string; to: string }): ExportRange {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  const som = (yr: number, mo: number) => new Date(yr, mo, 1);
-  const eom = (yr: number, mo: number) => new Date(yr, mo + 1, 0);
-  const label = (l: string) => l;
-
-  switch (key) {
-    case "this_month":
-      return { from: som(y, m), to: eom(y, m), label: label(now.toLocaleDateString(undefined, { month: "long", year: "numeric" })) };
-    case "last_month": {
-      const f = som(y, m - 1);
-      return { from: f, to: eom(y, m - 1), label: label(f.toLocaleDateString(undefined, { month: "long", year: "numeric" })) };
+function startOfMonth(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+function endOfMonth(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+}
+function fmtDay(d: Date) {
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+function rangeLabel(from: Date, to: Date) {
+  if (from.getFullYear() === to.getFullYear() && from.getMonth() === to.getMonth()) {
+    const som = startOfMonth(from);
+    const eom = endOfMonth(from);
+    if (from.getTime() === som.getTime() && to.toDateString() === eom.toDateString()) {
+      return from.toLocaleDateString(undefined, { month: "long", year: "numeric" });
     }
-    case "last_3m":
-      return { from: som(y, m - 2), to: eom(y, m), label: label("Last 3 months") };
-    case "last_6m":
-      return { from: som(y, m - 5), to: eom(y, m), label: label("Last 6 months") };
-    case "this_year":
-      return { from: new Date(y, 0, 1), to: new Date(y, 11, 31), label: label(`${y}`) };
-    case "custom": {
-      const f = custom.from ? new Date(custom.from) : new Date(y, m, 1);
-      const t = custom.to ? new Date(custom.to) : new Date();
-      return { from: f, to: t, label: label(`${f.toLocaleDateString()} → ${t.toLocaleDateString()}`) };
-    }
-    case "all_time":
-    default:
-      return { from: new Date(2000, 0, 1), to: new Date(2999, 11, 31), label: label("All time") };
   }
+  return `${fmtDay(from)} → ${fmtDay(to)}`;
 }
 
 export default function Export() {
@@ -62,8 +39,9 @@ export default function Export() {
   const { currency } = useCurrency();
   const [txs, setTxs] = useState<Transaction[]>([]);
   const [cats, setCats] = useState<Category[]>([]);
-  const [preset, setPreset] = useState<PresetKey>("this_month");
-  const [custom, setCustom] = useState({ from: "", to: "" });
+  const [from, setFrom] = useState<Date>(startOfMonth(new Date()));
+  const [to, setTo] = useState<Date>(endOfMonth(new Date()));
+  const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
 
@@ -77,7 +55,10 @@ export default function Export() {
     }, []),
   );
 
-  const range = useMemo(() => presetRange(preset, custom), [preset, custom]);
+  const range = useMemo(
+    () => ({ from, to, label: rangeLabel(from, to) }),
+    [from, to],
+  );
   const filtered = useMemo(() => filterByRange(txs, range), [txs, range]);
 
   const stats = useMemo(() => {
@@ -101,8 +82,8 @@ export default function Export() {
     setBusy(true);
     setResult(null);
     const csv = buildCsv(filtered, cats, currency);
-    const fromStr = range.from.toISOString().slice(0, 10);
-    const toStr = range.to.toISOString().slice(0, 10);
+    const fromStr = from.toISOString().slice(0, 10);
+    const toStr = to.toISOString().slice(0, 10);
     const filename = `aura-transactions-${fromStr}-to-${toStr}.csv`;
     const res = await exportCsv(csv, filename);
     setBusy(false);
@@ -139,56 +120,28 @@ export default function Export() {
           </Text>
         </View>
 
-        <Text style={styles.formLabel}>Range</Text>
-        <View style={styles.presetWrap}>
-          {PRESETS.map((p) => {
-            const active = preset === p.key;
-            return (
-              <Pressable
-                key={p.key}
-                testID={`preset-${p.key}`}
-                onPress={() => {
-                  Haptics.selectionAsync();
-                  setPreset(p.key);
-                }}
-                style={[styles.presetChip, active && styles.presetChipActive]}
-              >
-                <Text style={[styles.presetText, active && styles.presetTextActive]}>{p.label}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        {preset === "custom" && (
-          <View style={styles.customRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.formLabel}>From (YYYY-MM-DD)</Text>
-              <TextInput
-                testID="custom-from"
-                value={custom.from}
-                onChangeText={(v) => setCustom({ ...custom, from: v })}
-                placeholder="2026-01-01"
-                placeholderTextColor={colors.muted}
-                style={styles.input}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.formLabel}>To (YYYY-MM-DD)</Text>
-              <TextInput
-                testID="custom-to"
-                value={custom.to}
-                onChangeText={(v) => setCustom({ ...custom, to: v })}
-                placeholder="2026-01-31"
-                placeholderTextColor={colors.muted}
-                style={styles.input}
-              />
-            </View>
+        <Text style={styles.formLabel}>Date range</Text>
+        <Pressable
+          testID="range-picker-btn"
+          onPress={() => {
+            Haptics.selectionAsync();
+            setPicking(true);
+          }}
+          style={styles.rangeCard}
+        >
+          <View style={styles.rangeCardIcon}>
+            <Ionicons name="calendar" size={16} color={colors.brand} />
           </View>
-        )}
+          <View style={{ flex: 1 }}>
+            <Text style={styles.rangeCardLabel}>{range.label}</Text>
+            <Text style={styles.rangeCardSub}>Tap to change</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+        </Pressable>
 
         {/* Summary preview */}
         <View style={styles.previewCard}>
-          <Text style={styles.previewLabel}>{range.label}</Text>
+          <Text style={styles.previewLabel}>Preview</Text>
           <View style={styles.previewRow}>
             <PreviewStat label="Entries" value={String(stats.count)} color={colors.brand} />
             <PreviewStat label="Income" value={formatMoney(stats.income, currency, { compact: true })} color={colors.success} />
@@ -224,6 +177,19 @@ export default function Export() {
 
         {result && <Text style={styles.result}>{result}</Text>}
       </ScrollView>
+
+      <RangePickerModal
+        visible={picking}
+        from={from}
+        to={to}
+        onClose={() => setPicking(false)}
+        onChange={(f, t) => {
+          setFrom(f);
+          setTo(t);
+        }}
+        maxDate={new Date()}
+        title="Export range"
+      />
     </View>
   );
 }
@@ -284,36 +250,27 @@ const styles = StyleSheet.create({
     marginTop: 20,
     marginBottom: 8,
   },
-  presetWrap: {
+  rangeCard: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  presetChip: {
-    height: 36,
-    paddingHorizontal: 14,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceSecondary,
+    alignItems: "center",
+    gap: 12,
+    padding: 14,
+    borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
+    ...shadow.card,
+  },
+  rangeCardIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.brandTertiary,
+    alignItems: "center",
     justifyContent: "center",
   },
-  presetChipActive: {
-    backgroundColor: colors.brand,
-    borderColor: colors.brand,
-  },
-  presetText: { fontSize: 12, fontWeight: "600", color: colors.onSurface },
-  presetTextActive: { color: "#fff", fontWeight: "800" },
-  customRow: { flexDirection: "row", gap: 10 },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    padding: 10,
-    fontSize: 14,
-    color: colors.onSurface,
-    backgroundColor: colors.surfaceSecondary,
-  },
+  rangeCardLabel: { fontSize: 14, fontWeight: "800", color: colors.onSurface },
+  rangeCardSub: { fontSize: 11, color: colors.muted, marginTop: 2 },
   previewCard: {
     marginTop: 20,
     padding: 16,

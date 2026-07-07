@@ -180,7 +180,7 @@ export default function Home() {
           icon="scan"
           label="Scan SMS"
           color={colors.warning}
-          onPress={() => router.push("/paste-sms")}
+          onPress={() => router.push("/add-transaction?mode=sms")}
         />
       </View>
 
