@@ -1,0 +1,221 @@
+{
+  "app_name": "Aura Wealth",
+  "personality": "1 iOS-Native Clean structure with 6 Glass / Luxe surfaces",
+  "personality_one_liner": "A premium, cinematic expense and investment tracker blending iOS-native clarity with rich glassmorphism and deep botanical tones.",
+  "color": {
+    "surface": "#F8F9F8",
+    "onSurface": "#111211",
+    "surfaceSecondary": "#FFFFFF",
+    "onSurfaceSecondary": "#111211",
+    "surfaceTertiary": "#F0F1EF",
+    "onSurfaceTertiary": "#3E403F",
+    "surfaceInverse": "#181A19",
+    "onSurfaceInverse": "#FFFFFF",
+    "brand": "#2A5C43",
+    "brandPrimary": "#337052",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#498E6C",
+    "onBrandSecondary": "#FFFFFF",
+    "brandTertiary": "#DCE8E1",
+    "onBrandTertiary": "#2A5C43",
+    "success": "#287D4D",
+    "onSuccess": "#FFFFFF",
+    "warning": "#D97706",
+    "onWarning": "#FFFFFF",
+    "error": "#B94A48",
+    "onError": "#FFFFFF",
+    "info": "#4A5568",
+    "onInfo": "#FFFFFF",
+    "border": "#E5E7E5",
+    "borderStrong": "#D1D5D1",
+    "divider": "#E5E7E5",
+    "dark": {
+      "surface": "#0F1110",
+      "onSurface": "#F0F1EF",
+      "surfaceSecondary": "#1A1D1C",
+      "onSurfaceSecondary": "#F0F1EF",
+      "surfaceTertiary": "#242826",
+      "onSurfaceTertiary": "#B0B4B2",
+      "surfaceInverse": "#FFFFFF",
+      "onSurfaceInverse": "#111211",
+      "brand": "#498E6C",
+      "brandPrimary": "#56A67F",
+      "onBrandPrimary": "#0F1110",
+      "brandSecondary": "#62BC90",
+      "onBrandSecondary": "#0F1110",
+      "brandTertiary": "#1E362A",
+      "onBrandTertiary": "#62BC90",
+      "success": "#34A365",
+      "onSuccess": "#FFFFFF",
+      "warning": "#F59E0B",
+      "onWarning": "#FFFFFF",
+      "error": "#D65F5D",
+      "onError": "#FFFFFF",
+      "info": "#9CA3AF",
+      "onInfo": "#0F1110",
+      "border": "#2A2F2D",
+      "borderStrong": "#3A413F",
+      "divider": "#2A2F2D"
+    }
+  },
+  "typography": {
+    "displayFontFamily": "Plus Jakarta Sans",
+    "textFontFamily": "Geist",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24,
+      "3xl": 48
+    }
+  },
+  "spacing": {
+    "rule": "Generous vertical breathing room. Cards fill horizontal space (100% width minus padding). Use sticky containers for bottom CTAs.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": "1",
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Apply to sticky headers, bottom tab bar, floating FAB, and bottom-sheet drag handles.",
+      "Use as overlay on the Hero Balance Card paired with a tint and gradient scrim.",
+      "Ensure text on glass uses onSurfaceInverse or high contrast tokens."
+    ],
+    "dont's": [
+      "Do not blur form fields or standard list rows.",
+      "Do not apply blur without a 70% tint layer underneath for readability."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Home",
+      "purpose": "Dashboard providing a cinematic snapshot of net wealth, monthly cash flow, and quick actions.",
+      "states": {
+        "loading": "Centered spinner over safe area.",
+        "empty": "Should not be empty, defaults to 0 balance with onboarding tooltips.",
+        "error": "Readable message with retry button."
+      },
+      "layout": "Root is safe-area aware. Header with greeting and profile avatar. Hero Card (Total Balance) fills width, uses `images.hero_bg` underneath, covered by a vertical gradient scrim, then oversized 3xl typography. Below Hero: quick actions row (chips). Horizontal scrolling list for Investments Snapshot (sparklines). Recent Transactions (top 3) grouped by date. Floating FAB pinned at bottom right."
+    },
+    {
+      "name": "Add Transaction",
+      "purpose": "Frictionless bottom sheet entry for income, expense, or investment with a beautiful glass handle.",
+      "states": {
+        "loading": "N/A",
+        "empty": "N/A",
+        "error": "Inline validation text."
+      },
+      "layout": "BottomSheet root. Header segmented control (Expense/Income/Investment). Large amount input at `3xl`. Category grid of tinted `brandTertiary` rounded squares. Date and Note inputs. Sticky CTA Save button at the bottom avoiding keyboard."
+    },
+    {
+      "name": "Transactions",
+      "purpose": "Comprehensive ledger with fast horizontal filtering.",
+      "states": {
+        "loading": "Skeleton list items.",
+        "empty": "Illustration using `images.empty_state` + 'No transactions yet'.",
+        "error": "Error loading ledger + retry."
+      },
+      "layout": "Sticky Header with Search. Pinned Filter Row (scrolls horizontally behind glass header). List grouped by date (Today, Yesterday). Items: Tinted Icon, Title, Category, Amount (colored by type). Bottom padding accounts for Tab Bar."
+    },
+    {
+      "name": "Analytics",
+      "purpose": "Data visualization of spending trends and categories.",
+      "states": {
+        "loading": "Skeleton charts.",
+        "empty": "No data illustration.",
+        "error": "Failed to calculate analytics."
+      },
+      "layout": "Header with Monthly picker. Main visual: Skia-based donut chart for category breakdown. Legend below chart. Secondary visual: Bar chart for Income vs Expense. Use neutral/earthy colors for categories, never neon."
+    },
+    {
+      "name": "Budgets",
+      "purpose": "Tracking monthly budget limits and savings progress.",
+      "states": {
+        "loading": "Skeleton rings.",
+        "empty": "Set up your first budget prompt.",
+        "error": "Data calculation error."
+      },
+      "layout": "Top tab control: Budgets | Goals. Budgets view: Vertical list of cards with Skia circular progress rings. Over-budget uses warning color. Goals view: Cards with linear progress bars and target amounts."
+    },
+    {
+      "name": "Investments",
+      "purpose": "Monitor portfolio growth, SIPs, and mutual funds.",
+      "states": {
+        "loading": "Skeleton asset cards.",
+        "empty": "Illustration `images.investments_empty` + 'Start tracking wealth'.",
+        "error": "Failed to load portfolio."
+      },
+      "layout": "Hero header comparing 'Total Invested' to 'Current Value' with absolute gain/loss. Contextual benchmark note (e.g. 'Market is down 2%...'). Asset List using collapsible accordions (Equities, MFs) with sparkline charts on each row."
+    },
+    {
+      "name": "Settings",
+      "purpose": "App preferences, currency configuration, and data management.",
+      "states": {
+        "loading": "N/A",
+        "empty": "N/A",
+        "error": "N/A"
+      },
+      "layout": "Grouped list rows. Each row has a `brandTertiary` tinted icon container on the left, title, and right chevron. Includes toggles for Theme and clear data options."
+    }
+  ],
+  "images": {
+    "hero_bg": {
+      "url": "https://images.unsplash.com/photo-1629197520635-16570fbd0bb3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNzl8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGdyZWVuJTIwYWVzdGhldGljJTIwdGV4dHVyZXxlbnwwfHx8fDE3ODI1NzM3MTl8MA&ixlib=rb-4.1.0&q=85",
+      "dark": "https://images.pexels.com/photos/29041985/pexels-photo-29041985.jpeg",
+      "alt": "Abstract textured background for wealth card"
+    },
+    "empty_state": {
+      "url": "https://images.pexels.com/photos/7957723/pexels-photo-7957723.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Minimalist empty kraft box"
+    },
+    "investments_empty": {
+      "url": "https://images.pexels.com/photos/8369680/pexels-photo-8369680.jpeg",
+      "alt": "Bitcoin coins in a plant pot symbolizing growth"
+    }
+  },
+  "haptics": {
+    "tab_press": "light",
+    "button_press": "medium",
+    "transaction_save": "success",
+    "chart_scrub": "selection",
+    "bottom_sheet_open": "light"
+  },
+  "instructions_to_main_agent": [
+    "Strictly follow the color palette. Blue, purple, and indigo are completely banned.",
+    "Implement the 3-stop vertical gradient scrim over the `hero_bg` image to ensure text contrast. Text on image MUST be readable.",
+    "Use AsyncStorage for all data persistence. Do not add authentication or backend sync.",
+    "Currency is strictly INR (₹) across the app.",
+    "Investments screen must use sparkline charts and contextual benchmarking for performance. Minimize red colors to reduce panic during losses.",
+    "Ensure safe area is respected at every screen root. Content must not hide under notches or navigation bars.",
+    "Use Phosphor icons consistently. Tinted icon containers (`brandTertiary` background) are the default for list rows.",
+    "Do not use emojis anywhere in the system UI.",
+    "Include haptics explicitly using `expo-haptics` mapped to the defined events."
+  ]
+}
