@@ -1,0 +1,211 @@
+import React, { useEffect, useState , useMemo} from "react";
+import { View, Text, StyleSheet, Pressable, ScrollView, Alert, Modal, TextInput } from "react-native";
+import { useLocalSearchParams, useRouter, Stack } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
+import * as Haptics from "expo-haptics";
+
+import { radius, spacing } from "@/src/theme";
+import { formatMoney, formatDate } from "@/src/utils/format";
+import { getGoals, getGoalContributions, Goal, GoalContribution, addGoalContribution, updateGoal, deleteGoal } from "@/src/store";
+import { useCurrency } from "@/src/currency";
+import { EmptyState } from "@/src/components/CategoryIcon";
+import { useTheme } from "@/src/theme/ThemeContext";
+export default function GoalDetailScreen() {
+  const { colors } = useTheme();
+  const s = useMemo(() => createStyles(colors), [colors]);
+
+  const { id, initialGoal } = useLocalSearchParams<{ id: string; initialGoal?: string }>();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { currency } = useCurrency();
+
+  const [goal, setGoal] = useState<Goal | null>(initialGoal ? JSON.parse(initialGoal as string) : null);
+  const [contributions, setContributions] = useState<GoalContribution[]>([]);
+  
+  // Add funds modal state
+  const [showAdd, setShowAdd] = useState(false);
+  const [contributionAmt, setContributionAmt] = useState("");
+
+  useEffect(() => {
+    load();
+  }, [id]);
+
+  const load = async () => {
+    if (!id) return;
+    const goals = await getGoals();
+    const g = goals.find(x => x.id === id);
+    if (g) {
+      setGoal(g);
+      const c = await getGoalContributions(id);
+      setContributions(c);
+    }
+  };
+
+  const removeGoal = () => {
+    if (!goal) return;
+    Alert.alert("Delete goal?", "This cannot be undone.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: async () => { 
+        await deleteGoal(goal.id); 
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); 
+        router.back(); 
+      } },
+    ]);
+  };
+
+  const submitFunds = async () => {
+    if (!goal) return;
+    const amt = Number(contributionAmt);
+    if (!amt || amt <= 0) { 
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error); 
+      return; 
+    }
+    const newSaved = goal.saved + amt;
+    const newStatus = newSaved >= goal.target ? "completed" : "pending";
+    await addGoalContribution(goal.id, amt);
+    await updateGoal(goal.id, { saved: newSaved, status: newStatus });
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); 
+    setShowAdd(false);
+    setContributionAmt("");
+    load();
+  };
+
+  if (!goal) return <View style={{ flex: 1, backgroundColor: colors.surface }} />;
+
+  const p = Math.min(100, (goal.saved / goal.target) * 100);
+  const done = goal.status === "completed";
+
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.surface }}>
+      <Stack.Screen 
+        options={{ 
+          headerShown: false
+        }} 
+      />
+
+      {/* Header */}
+      <View style={[s.headerRow, { paddingTop: insets.top + 8 }]}>
+        <Pressable onPress={() => router.back()} hitSlop={10} style={s.backBtn}>
+          <Ionicons name="arrow-back" size={24} color={colors.onSurface} />
+        </Pressable>
+        <Text style={s.title} numberOfLines={1}>{goal.title}</Text>
+        {!done ? (
+          <Pressable onPress={() => setShowAdd(true)} style={s.addBtn}>
+            <Ionicons name="add" size={16} color={colors.surface} />
+            <Text style={s.addBtnText}>Add</Text>
+          </Pressable>
+        ) : (
+          <View style={{ width: 60 }} />
+        )}
+      </View>
+
+      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 100 }}>
+        {/* Progress Card */}
+        <View style={s.progressCard}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8 }}>
+            <View>
+              <Text style={s.cardLabel}>SAVED</Text>
+              <Text style={s.cardVal}>{formatMoney(goal.saved, currency)}</Text>
+            </View>
+            <View style={{ alignItems: "flex-end" }}>
+              <Text style={s.cardLabel}>TARGET</Text>
+              <Text style={s.cardValSub}>{formatMoney(goal.target, currency)}</Text>
+            </View>
+          </View>
+          
+          <View style={s.barBg}>
+            <View style={[s.barFill, { width: `${p}%`, backgroundColor: done ? colors.success : colors.brand }]} />
+          </View>
+          
+          <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 8 }}>
+            <Text style={[s.pctText, { color: done ? colors.success : colors.brand }]}>{p.toFixed(1)}%</Text>
+            <Text style={s.periodText}>{goal.period || "No deadline"}</Text>
+          </View>
+        </View>
+
+        <Text style={s.sectionTitle}>Contribution History</Text>
+        <View style={s.listCard}>
+          {contributions.length === 0 ? (
+            <View style={{ padding: 20 }}>
+              <EmptyState icon="time-outline" title="No contributions" subtitle="Add funds to see history" />
+            </View>
+          ) : (
+            contributions.map((c, i) => (
+              <View key={c.id} style={[s.historyRow, i === contributions.length - 1 && { borderBottomWidth: 0 }]}>
+                <View style={s.historyIcon}>
+                  <Ionicons name="arrow-up" size={14} color={colors.brand} />
+                </View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={s.historyTitle}>Contribution</Text>
+                  <Text style={s.historyDate}>{formatDate(c.createdAt)}</Text>
+                </View>
+                <Text style={s.historyAmt}>+{formatMoney(c.amount, currency)}</Text>
+              </View>
+            ))
+          )}
+        </View>
+
+        <Pressable onPress={removeGoal} style={s.deleteRow}>
+          <Ionicons name="trash-outline" size={16} color={colors.error} />
+          <Text style={{ fontSize: 13, color: colors.error, fontWeight: "700", marginLeft: 6 }}>Delete goal</Text>
+        </Pressable>
+      </ScrollView>
+
+      {/* Add Funds Modal */}
+      <Modal visible={showAdd} transparent animationType="fade">
+        <View style={{ flex: 1, justifyContent: "center", padding: 24 }}>
+          <BlurView intensity={60} tint="default" style={StyleSheet.absoluteFill}><Pressable style={{ flex: 1 }} onPress={() => setShowAdd(false)} /></BlurView>
+          <View style={{ backgroundColor: colors.surface, borderRadius: 24, padding: 24 }}>
+            <Text style={{ fontSize: 18, fontWeight: "800", color: colors.onSurface, marginBottom: 16 }}>Add Funds</Text>
+            <Text style={{ fontSize: 11, color: colors.muted, textTransform: "uppercase", fontWeight: "700", marginBottom: 6 }}>Amount ({currency.symbol})</Text>
+            <TextInput 
+              value={contributionAmt} 
+              onChangeText={(v) => setContributionAmt(v.replace(/[^0-9]/g, ""))} 
+              placeholder="5000" 
+              placeholderTextColor={colors.muted} 
+              keyboardType="numeric" 
+              style={s.input} 
+              autoFocus 
+            />
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 24 }}>
+              <Pressable style={[s.btn, s.btnG]} onPress={() => setShowAdd(false)}><Text style={s.btnGT}>Cancel</Text></Pressable>
+              <Pressable style={[s.btn, s.btnP, { opacity: !contributionAmt ? 0.5 : 1 }]} onPress={submitFunds} disabled={!contributionAmt}><Text style={s.btnPT}>Add</Text></Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+const createStyles = (colors: any) => StyleSheet.create({
+  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
+  backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceTertiary, alignItems: "center", justifyContent: "center" },
+  title: { fontSize: 18, fontWeight: "800", color: colors.onSurface, flex: 1, textAlign: "center", marginHorizontal: 12 },
+  addBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.onSurface, paddingHorizontal: 12, height: 32, borderRadius: 16 },
+  addBtnText: { color: colors.surface, fontSize: 12, fontWeight: "700" },
+  progressCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, padding: 20, borderWidth: 1, borderColor: colors.border },
+  cardLabel: { fontSize: 10, color: colors.muted, fontWeight: "700", letterSpacing: 0.6 },
+  cardVal: { fontSize: 24, fontWeight: "800", color: colors.onSurface, marginTop: 2 },
+  cardValSub: { fontSize: 16, fontWeight: "700", color: colors.onSurface, marginTop: 2 },
+  barBg: { height: 8, backgroundColor: colors.surfaceTertiary, borderRadius: 4, overflow: "hidden", marginTop: 12 },
+  barFill: { height: "100%", borderRadius: 4 },
+  pctText: { fontSize: 13, fontWeight: "800" },
+  periodText: { fontSize: 12, color: colors.muted, fontWeight: "600" },
+  sectionTitle: { fontSize: 16, fontWeight: "800", color: colors.onSurface, marginTop: 32, marginBottom: 12, paddingHorizontal: 4 },
+  listCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
+  historyRow: { flexDirection: "row", alignItems: "center", paddingVertical: 14, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  historyIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center" },
+  historyTitle: { fontSize: 14, fontWeight: "700", color: colors.onSurface },
+  historyDate: { fontSize: 11, color: colors.muted, marginTop: 2 },
+  historyAmt: { fontSize: 14, fontWeight: "800", color: colors.brand },
+  deleteRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 14, marginTop: 32, borderRadius: radius.md, backgroundColor: colors.error + "08" },
+  input: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: 12, fontSize: 15, color: colors.onSurface, backgroundColor: colors.surface, fontWeight: "600" },
+  btn: { flex: 1, height: 48, borderRadius: radius.pill, alignItems: "center", justifyContent: "center" },
+  btnG: { backgroundColor: colors.surfaceTertiary },
+  btnGT: { color: colors.onSurface, fontWeight: "700" },
+  btnP: { backgroundColor: colors.brand },
+  btnPT: { color: "#fff", fontWeight: "700" },
+});

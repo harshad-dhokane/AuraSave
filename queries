@@ -1,0 +1,242 @@
+-- ══════════════════════════════════════════════════════════════
+-- 1. PROFILES — extends Supabase auth.users
+-- ══════════════════════════════════════════════════════════════
+CREATE TABLE profiles (
+  id          UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL DEFAULT 'there',
+  currency    TEXT NOT NULL DEFAULT 'INR',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Auto-create profile on sign-up
+CREATE OR REPLACE FUNCTION handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO profiles (id) VALUES (NEW.id);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION handle_new_user();
+
+
+-- ══════════════════════════════════════════════════════════════
+-- 2. CATEGORIES — predefined + user-custom
+-- ══════════════════════════════════════════════════════════════
+CREATE TABLE categories (
+  id          TEXT NOT NULL,
+  user_id     UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  icon        TEXT NOT NULL,
+  color       TEXT NOT NULL,
+  type        TEXT NOT NULL CHECK (type IN ('expense', 'income', 'investment')),
+  is_default  BOOLEAN NOT NULL DEFAULT false,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (id, user_id)
+);
+
+-- Index: fast lookup by user
+CREATE INDEX idx_categories_user ON categories(user_id);
+
+
+-- ══════════════════════════════════════════════════════════════
+-- 3. TRANSACTIONS
+-- ══════════════════════════════════════════════════════════════
+CREATE TABLE transactions (
+  id          TEXT PRIMARY KEY,
+  user_id     UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  type        TEXT NOT NULL CHECK (type IN ('expense', 'income', 'investment')),
+  amount      NUMERIC(12,2) NOT NULL CHECK (amount > 0),
+  category_id TEXT NOT NULL,
+  note        TEXT,
+  date        TIMESTAMPTZ NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Composite indexes covering the main query patterns
+CREATE INDEX idx_transactions_user       ON transactions(user_id);
+CREATE INDEX idx_transactions_date       ON transactions(user_id, date DESC);
+CREATE INDEX idx_transactions_type       ON transactions(user_id, type);
+CREATE INDEX idx_transactions_cat_date   ON transactions(user_id, category_id, date DESC);
+
+
+-- ══════════════════════════════════════════════════════════════
+-- 4. BUDGETS — one per category per month
+-- ══════════════════════════════════════════════════════════════
+CREATE TABLE budgets (
+  id          TEXT PRIMARY KEY,
+  user_id     UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  category_id TEXT NOT NULL,
+  "limit"     NUMERIC(12,2) NOT NULL CHECK ("limit" > 0),
+  month       TEXT NOT NULL,   -- 'YYYY-MM'
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(user_id, category_id, month)
+);
+
+CREATE INDEX idx_budgets_user_month ON budgets(user_id, month);
+
+
+-- ══════════════════════════════════════════════════════════════
+-- 5. GOALS — savings targets
+-- ══════════════════════════════════════════════════════════════
+CREATE TABLE goals (
+  id          TEXT PRIMARY KEY,
+  user_id     UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  title       TEXT NOT NULL,
+  target      NUMERIC(12,2) NOT NULL CHECK (target > 0),
+  saved       NUMERIC(12,2) NOT NULL DEFAULT 0,
+  deadline    TIMESTAMPTZ,
+  period      TEXT,  -- e.g. '3 months', '6 months', '1 year'
+  status      TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed')),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Composite: user + status for filtered queries, user + created_at for ordered list
+CREATE INDEX idx_goals_user            ON goals(user_id);
+CREATE INDEX idx_goals_user_status     ON goals(user_id, status);
+CREATE INDEX idx_goals_user_created    ON goals(user_id, created_at DESC);
+
+
+-- ══════════════════════════════════════════════════════════════
+-- 6. GOAL_CONTRIBUTIONS — history of deposits into goals
+-- ══════════════════════════════════════════════════════════════
+CREATE TABLE goal_contributions (
+  id          TEXT PRIMARY KEY,
+  goal_id     TEXT NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+  user_id     UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  amount      NUMERIC(12,2) NOT NULL CHECK (amount > 0),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Composite: goal + order for detail page
+CREATE INDEX idx_goal_contributions_goal    ON goal_contributions(goal_id);
+CREATE INDEX idx_goal_contributions_ordered ON goal_contributions(goal_id, created_at DESC);
+CREATE INDEX idx_goal_contributions_user    ON goal_contributions(user_id);
+
+
+
+-- ══════════════════════════════════════════════════════════════
+-- 7. LOANS — Money Lent / Borrowed
+-- ══════════════════════════════════════════════════════════════
+CREATE TABLE loans (
+  id          TEXT PRIMARY KEY,
+  user_id     UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  type        TEXT NOT NULL CHECK (type IN ('lent', 'borrowed')),
+  person      TEXT NOT NULL,
+  amount      NUMERIC(12,2) NOT NULL CHECK (amount > 0),
+  paid_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+  date               TIMESTAMPTZ NOT NULL,
+  due_date           TIMESTAMPTZ,
+  status             TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'settled')),
+  repayment_expected BOOLEAN NOT NULL DEFAULT true,
+  notes              TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Composite indexes for all loan query patterns
+CREATE INDEX idx_loans_user             ON loans(user_id);
+CREATE INDEX idx_loans_user_type        ON loans(user_id, type);
+CREATE INDEX idx_loans_user_status      ON loans(user_id, status);
+CREATE INDEX idx_loans_user_date        ON loans(user_id, date DESC);
+
+-- ══════════════════════════════════════════════════════════════
+-- 8. LOAN_PAYMENTS — History of repayments for loans
+-- ══════════════════════════════════════════════════════════════
+CREATE TABLE loan_payments (
+  id          TEXT PRIMARY KEY,
+  loan_id     TEXT NOT NULL REFERENCES loans(id) ON DELETE CASCADE,
+  user_id     UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  amount      NUMERIC(12,2) NOT NULL CHECK (amount > 0),
+  date        TIMESTAMPTZ NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Composite: loan + order for detail page
+CREATE INDEX idx_loan_payments_loan          ON loan_payments(loan_id);
+CREATE INDEX idx_loan_payments_loan_ordered  ON loan_payments(loan_id, date DESC);
+CREATE INDEX idx_loan_payments_user          ON loan_payments(user_id);
+
+-- Enable RLS on all tables
+ALTER TABLE profiles     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE categories   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE budgets      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE goals        ENABLE ROW LEVEL SECURITY;
+
+-- ── Profiles ────────────────────────────────────
+CREATE POLICY "Users read own profile"
+  ON profiles FOR SELECT USING (auth.uid() = id);
+CREATE POLICY "Users update own profile"
+  ON profiles FOR UPDATE USING (auth.uid() = id);
+
+-- ── Categories ──────────────────────────────────
+CREATE POLICY "Users read own categories"
+  ON categories FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users insert own categories"
+  ON categories FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users update own categories"
+  ON categories FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Users delete own categories"
+  ON categories FOR DELETE USING (auth.uid() = user_id);
+
+-- ── Transactions ────────────────────────────────
+CREATE POLICY "Users read own transactions"
+  ON transactions FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users insert own transactions"
+  ON transactions FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users delete own transactions"
+  ON transactions FOR DELETE USING (auth.uid() = user_id);
+
+-- ── Budgets ─────────────────────────────────────
+CREATE POLICY "Users read own budgets"
+  ON budgets FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users insert own budgets"
+  ON budgets FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users update own budgets"
+  ON budgets FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Users delete own budgets"
+  ON budgets FOR DELETE USING (auth.uid() = user_id);
+
+-- ── Goals ───────────────────────────────────────
+CREATE POLICY "Users read own goals"
+  ON goals FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users insert own goals"
+  ON goals FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users update own goals"
+  ON goals FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Users delete own goals"
+  ON goals FOR DELETE USING (auth.uid() = user_id);
+
+-- ── Loans ───────────────────────────────────────
+ALTER TABLE loans          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE loan_payments  ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users read own loans"
+  ON loans FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users insert own loans"
+  ON loans FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users update own loans"
+  ON loans FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Users delete own loans"
+  ON loans FOR DELETE USING (auth.uid() = user_id);
+
+-- ── Loan Payments ───────────────────────────────
+CREATE POLICY "Users read own loan payments"
+  ON loan_payments FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users insert own loan payments"
+  ON loan_payments FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users update own loan payments"
+  ON loan_payments FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Users delete own loan payments"
+  ON loan_payments FOR DELETE USING (auth.uid() = user_id);
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Added "public." before profiles so the auth schema can find it
+  INSERT INTO public.profiles (id) VALUES (NEW.id);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
