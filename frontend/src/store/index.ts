@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { supabase } from "@/src/lib/supabase";
 import { colors } from "@/src/theme";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -67,173 +67,316 @@ export const DEFAULT_CATEGORIES: Category[] = [
   { id: "cat-other-inv", name: "Other Investment", icon: "ellipsis-horizontal", color: colors.cat.slate, type: "investment" },
 ];
 
-// ─── Storage Keys ───────────────────────────────────────────────────────────
-const KEYS = {
-  transactions: "aura:transactions",
-  categories: "aura:categories",
-  budgets: "aura:budgets",
-  goals: "aura:goals",
-  profile: "aura:profile",
-  seeded: "aura:seeded_v1",
-};
-
-// ─── Generic helpers ────────────────────────────────────────────────────────
-async function readList<T>(key: string, fallback: T[] = []): Promise<T[]> {
-  try {
-    const raw = await AsyncStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T[];
-  } catch {
-    return fallback;
-  }
+// ─── Helpers ────────────────────────────────────────────────────────────────
+async function getUserId(): Promise<string | null> {
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) return null;
+  return data.user.id;
 }
 
-async function writeList<T>(key: string, list: T[]): Promise<void> {
-  await AsyncStorage.setItem(key, JSON.stringify(list));
-}
-
-// ─── ID generator (no external uuid dep) ────────────────────────────────────
 export function makeId(prefix = "id"): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 // ─── Transactions ───────────────────────────────────────────────────────────
 export async function getTransactions(): Promise<Transaction[]> {
-  return readList<Transaction>(KEYS.transactions);
+  const userId = await getUserId();
+  if (!userId) return [];
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("user_id", userId)
+    .order("date", { ascending: false });
+
+  if (error) {
+    console.error("getTransactions error:", error);
+    return [];
+  }
+  return (data || []).map(mapTransaction);
 }
+
 export async function addTransaction(tx: Omit<Transaction, "id" | "createdAt">): Promise<Transaction> {
-  const list = await getTransactions();
-  const full: Transaction = { ...tx, id: makeId("tx"), createdAt: new Date().toISOString() };
-  await writeList(KEYS.transactions, [full, ...list]);
-  return full;
+  const userId = await getUserId();
+  if (!userId) throw new Error("Not authenticated");
+  const id = makeId("tx");
+  const now = new Date().toISOString();
+  const { error } = await supabase.from("transactions").insert({
+    id,
+    user_id: userId,
+    type: tx.type,
+    amount: tx.amount,
+    category_id: tx.categoryId,
+    note: tx.note || null,
+    date: tx.date,
+    created_at: now,
+  });
+  if (error) console.error("addTransaction error:", error);
+  return { ...tx, id, createdAt: now };
 }
+
 export async function deleteTransaction(id: string): Promise<void> {
-  const list = await getTransactions();
-  await writeList(KEYS.transactions, list.filter((t) => t.id !== id));
+  const { error } = await supabase.from("transactions").delete().eq("id", id);
+  if (error) console.error("deleteTransaction error:", error);
 }
 
 // ─── Categories ─────────────────────────────────────────────────────────────
 export async function getCategories(): Promise<Category[]> {
-  const stored = await readList<Category>(KEYS.categories, []);
-  if (stored.length === 0) {
-    await writeList(KEYS.categories, DEFAULT_CATEGORIES);
+  const userId = await getUserId();
+  if (!userId) return DEFAULT_CATEGORIES;
+  const { data, error } = await supabase
+    .from("categories")
+    .select("*")
+    .eq("user_id", userId);
+
+  if (error) {
+    console.error("getCategories error:", error);
     return DEFAULT_CATEGORIES;
   }
-  return stored;
+
+  if (!data || data.length === 0) {
+    // Seed default categories for this user
+    await seedDefaultCategories(userId);
+    return DEFAULT_CATEGORIES;
+  }
+
+  return data.map(mapCategory);
 }
+
+async function seedDefaultCategories(userId: string) {
+  const rows = DEFAULT_CATEGORIES.map((c) => ({
+    id: c.id,
+    user_id: userId,
+    name: c.name,
+    icon: c.icon,
+    color: c.color,
+    type: c.type,
+    is_default: true,
+  }));
+  const { error } = await supabase.from("categories").insert(rows);
+  if (error) console.error("seedDefaultCategories error:", error);
+}
+
 export async function addCategory(cat: Omit<Category, "id">): Promise<Category> {
-  const list = await getCategories();
-  const full: Category = { ...cat, id: makeId("cat") };
-  await writeList(KEYS.categories, [...list, full]);
-  return full;
+  const userId = await getUserId();
+  if (!userId) throw new Error("Not authenticated");
+  const id = makeId("cat");
+  const { error } = await supabase.from("categories").insert({
+    id,
+    user_id: userId,
+    name: cat.name,
+    icon: cat.icon,
+    color: cat.color,
+    type: cat.type,
+    is_default: false,
+  });
+  if (error) console.error("addCategory error:", error);
+  return { ...cat, id };
 }
 
 // ─── Budgets ────────────────────────────────────────────────────────────────
 export async function getBudgets(): Promise<Budget[]> {
-  return readList<Budget>(KEYS.budgets);
-}
-export async function upsertBudget(b: Omit<Budget, "id"> & { id?: string }): Promise<Budget> {
-  const list = await getBudgets();
-  const existing = list.find((x) => x.categoryId === b.categoryId && x.month === b.month);
-  if (existing) {
-    existing.limit = b.limit;
-    await writeList(KEYS.budgets, list);
-    return existing;
+  const userId = await getUserId();
+  if (!userId) return [];
+  const { data, error } = await supabase
+    .from("budgets")
+    .select("*")
+    .eq("user_id", userId);
+
+  if (error) {
+    console.error("getBudgets error:", error);
+    return [];
   }
-  const full: Budget = { ...b, id: makeId("bg") };
-  await writeList(KEYS.budgets, [...list, full]);
-  return full;
+  return (data || []).map(mapBudget);
 }
+
+export async function upsertBudget(b: Omit<Budget, "id"> & { id?: string }): Promise<Budget> {
+  const userId = await getUserId();
+  if (!userId) throw new Error("Not authenticated");
+
+  // Check if budget exists for this category+month
+  const { data: existing } = await supabase
+    .from("budgets")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("category_id", b.categoryId)
+    .eq("month", b.month)
+    .limit(1)
+    .single();
+
+  if (existing) {
+    // Update existing
+    const { error } = await supabase
+      .from("budgets")
+      .update({ limit: b.limit })
+      .eq("id", existing.id);
+    if (error) console.error("upsertBudget update error:", error);
+    return { id: existing.id, categoryId: b.categoryId, limit: b.limit, month: b.month };
+  } else {
+    // Insert new
+    const id = makeId("bg");
+    const { error } = await supabase.from("budgets").insert({
+      id,
+      user_id: userId,
+      category_id: b.categoryId,
+      limit: b.limit,
+      month: b.month,
+    });
+    if (error) console.error("upsertBudget insert error:", error);
+    return { id, categoryId: b.categoryId, limit: b.limit, month: b.month };
+  }
+}
+
 export async function deleteBudget(id: string): Promise<void> {
-  const list = await getBudgets();
-  await writeList(KEYS.budgets, list.filter((b) => b.id !== id));
+  const { error } = await supabase.from("budgets").delete().eq("id", id);
+  if (error) console.error("deleteBudget error:", error);
 }
 
 // ─── Goals ──────────────────────────────────────────────────────────────────
 export async function getGoals(): Promise<Goal[]> {
-  return readList<Goal>(KEYS.goals);
-}
-export async function addGoal(g: Omit<Goal, "id" | "createdAt">): Promise<Goal> {
-  const list = await getGoals();
-  const full: Goal = { ...g, id: makeId("gl"), createdAt: new Date().toISOString() };
-  await writeList(KEYS.goals, [...list, full]);
-  return full;
-}
-export async function updateGoal(id: string, patch: Partial<Goal>): Promise<void> {
-  const list = await getGoals();
-  const idx = list.findIndex((g) => g.id === id);
-  if (idx >= 0) {
-    list[idx] = { ...list[idx], ...patch };
-    await writeList(KEYS.goals, list);
+  const userId = await getUserId();
+  if (!userId) return [];
+  const { data, error } = await supabase
+    .from("goals")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("getGoals error:", error);
+    return [];
   }
+  return (data || []).map(mapGoal);
 }
+
+export async function addGoal(g: Omit<Goal, "id" | "createdAt">): Promise<Goal> {
+  const userId = await getUserId();
+  if (!userId) throw new Error("Not authenticated");
+  const id = makeId("gl");
+  const now = new Date().toISOString();
+  const { error } = await supabase.from("goals").insert({
+    id,
+    user_id: userId,
+    title: g.title,
+    target: g.target,
+    saved: g.saved,
+    deadline: g.deadline || null,
+    created_at: now,
+  });
+  if (error) console.error("addGoal error:", error);
+  return { ...g, id, createdAt: now };
+}
+
+export async function updateGoal(id: string, patch: Partial<Goal>): Promise<void> {
+  const updates: Record<string, any> = {};
+  if (patch.title !== undefined) updates.title = patch.title;
+  if (patch.target !== undefined) updates.target = patch.target;
+  if (patch.saved !== undefined) updates.saved = patch.saved;
+  if (patch.deadline !== undefined) updates.deadline = patch.deadline;
+
+  const { error } = await supabase.from("goals").update(updates).eq("id", id);
+  if (error) console.error("updateGoal error:", error);
+}
+
 export async function deleteGoal(id: string): Promise<void> {
-  const list = await getGoals();
-  await writeList(KEYS.goals, list.filter((g) => g.id !== id));
+  const { error } = await supabase.from("goals").delete().eq("id", id);
+  if (error) console.error("deleteGoal error:", error);
 }
 
 // ─── Profile ────────────────────────────────────────────────────────────────
 export interface Profile {
   name: string;
 }
+
 export async function getProfile(): Promise<Profile> {
   try {
-    const raw = await AsyncStorage.getItem(KEYS.profile);
-    if (raw) return JSON.parse(raw) as Profile;
+    const userId = await getUserId();
+    if (!userId) return { name: "there" };
+    const { data } = await supabase
+      .from("profiles")
+      .select("name")
+      .eq("id", userId)
+      .single();
+    if (data) return { name: data.name };
   } catch {}
   return { name: "there" };
 }
+
 export async function setProfile(p: Profile): Promise<void> {
-  await AsyncStorage.setItem(KEYS.profile, JSON.stringify(p));
+  try {
+    const userId = await getUserId();
+    if (!userId) return;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ name: p.name })
+      .eq("id", userId);
+    if (error) console.error("setProfile error:", error);
+  } catch {}
 }
 
-// ─── Utility: reset all ─────────────────────────────────────────────────────
+// ─── Utility: clearAllData ──────────────────────────────────────────────────
 export async function clearAllData(): Promise<void> {
-  await AsyncStorage.multiRemove([
-    KEYS.transactions,
-    KEYS.budgets,
-    KEYS.goals,
-    KEYS.categories,
-    KEYS.seeded,
+  const userId = await getUserId();
+  if (!userId) return;
+  await Promise.all([
+    supabase.from("transactions").delete().eq("user_id", userId),
+    supabase.from("budgets").delete().eq("user_id", userId),
+    supabase.from("goals").delete().eq("user_id", userId),
+    supabase.from("categories").delete().eq("user_id", userId),
   ]);
 }
 
-// ─── Seed sample data on first launch (for a beautiful first impression) ────
+// ─── Seed sample data on first launch ───────────────────────────────────────
 export async function seedIfNeeded(): Promise<void> {
-  const seeded = await AsyncStorage.getItem(KEYS.seeded);
-  if (seeded) return;
+  try {
+    const userId = await getUserId();
+    if (!userId) return;
 
-  await getCategories(); // triggers default cat seed
-  const now = new Date();
-  const iso = (daysAgo: number) => {
-    const d = new Date(now);
-    d.setDate(d.getDate() - daysAgo);
-    return d.toISOString();
+    // Seed default categories for this user if they don't have any
+    await getCategories();
+  } catch (err) {
+    console.error("seedIfNeeded error:", err);
+  }
+}
+
+// ─── DB row → app model mappers (snake_case → camelCase) ────────────────────
+function mapTransaction(row: any): Transaction {
+  return {
+    id: row.id,
+    type: row.type,
+    amount: Number(row.amount),
+    categoryId: row.category_id,
+    note: row.note || undefined,
+    date: row.date,
+    createdAt: row.created_at,
   };
+}
 
-  const sample: Omit<Transaction, "id" | "createdAt">[] = [
-    { type: "income", amount: 85000, categoryId: "cat-salary", note: "Monthly salary", date: iso(2) },
-    { type: "expense", amount: 18500, categoryId: "cat-rent", note: "May rent", date: iso(3) },
-    { type: "expense", amount: 2450, categoryId: "cat-groceries", note: "BigBasket", date: iso(1) },
-    { type: "expense", amount: 620, categoryId: "cat-food", note: "Dinner", date: iso(0) },
-    { type: "expense", amount: 340, categoryId: "cat-transport", note: "Uber", date: iso(0) },
-    { type: "expense", amount: 1200, categoryId: "cat-entertainment", note: "Movie night", date: iso(4) },
-    { type: "expense", amount: 899, categoryId: "cat-shopping", note: "T-shirt", date: iso(5) },
-    { type: "expense", amount: 2100, categoryId: "cat-bills", note: "Electricity", date: iso(6) },
-    { type: "investment", amount: 10000, categoryId: "cat-sip", note: "SIP - Nifty50", date: iso(2) },
-    { type: "investment", amount: 5000, categoryId: "cat-stocks", note: "HDFC Bank", date: iso(7) },
-    { type: "income", amount: 12000, categoryId: "cat-freelance", note: "Client project", date: iso(9) },
-  ];
-  for (const s of sample) await addTransaction(s);
+function mapCategory(row: any): Category {
+  return {
+    id: row.id,
+    name: row.name,
+    icon: row.icon,
+    color: row.color,
+    type: row.type,
+  };
+}
 
-  const mk = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  await upsertBudget({ categoryId: "cat-food", limit: 6000, month: mk });
-  await upsertBudget({ categoryId: "cat-groceries", limit: 8000, month: mk });
-  await upsertBudget({ categoryId: "cat-entertainment", limit: 3000, month: mk });
-  await upsertBudget({ categoryId: "cat-shopping", limit: 5000, month: mk });
+function mapBudget(row: any): Budget {
+  return {
+    id: row.id,
+    categoryId: row.category_id,
+    limit: Number(row.limit),
+    month: row.month,
+  };
+}
 
-  await addGoal({ title: "Emergency Fund", target: 100000, saved: 42000 });
-  await addGoal({ title: "Goa Vacation", target: 50000, saved: 15000 });
-
-  await AsyncStorage.setItem(KEYS.seeded, "true");
+function mapGoal(row: any): Goal {
+  return {
+    id: row.id,
+    title: row.title,
+    target: Number(row.target),
+    saved: Number(row.saved),
+    deadline: row.deadline || undefined,
+    createdAt: row.created_at,
+  };
 }

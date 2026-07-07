@@ -1,7 +1,7 @@
-import { Stack } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
-import { LogBox, View } from "react-native";
+import { LogBox, View, ActivityIndicator } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -10,6 +10,7 @@ import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { seedIfNeeded } from "@/src/store";
 import { colors } from "@/src/theme";
 import { CurrencyProvider } from "@/src/currency";
+import { AuthProvider, useAuth } from "@/src/context/AuthContext";
 
 
 // Disable logbox errors etc so that users can see the app
@@ -22,13 +23,45 @@ LogBox.ignoreAllLogs(true)
 // the family is registered — which throws on Android Expo Go.
 SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
-  const [loaded, error] = useIconFonts();
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const { session, loading } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
 
   useEffect(() => {
-    // Seed sample data once on first launch for a beautiful first impression
-    seedIfNeeded().catch(() => {});
-  }, []);
+    if (loading) return;
+
+    const inAuthScreen = segments[0] === "auth";
+
+    if (!session && !inAuthScreen) {
+      // Not authenticated → redirect to auth
+      router.replace("/auth");
+    } else if (session && inAuthScreen) {
+      // Authenticated → redirect to home
+      router.replace("/");
+    }
+  }, [session, loading, segments]);
+
+  useEffect(() => {
+    if (!loading && session) {
+      // Seed sample data once on first sign-in
+      seedIfNeeded().catch(() => {});
+    }
+  }, [loading, session]);
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator size="large" color={colors.brandPrimary} />
+      </View>
+    );
+  }
+
+  return <>{children}</>;
+}
+
+export default function RootLayout() {
+  const [loaded, error] = useIconFonts();
 
   useEffect(() => {
     if (loaded || error) {
@@ -43,34 +76,39 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <CurrencyProvider>
-          <View style={{ flex: 1, backgroundColor: colors.surface }}>
-            <StatusBar style="dark" />
-            <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }}>
-              <Stack.Screen name="(tabs)" />
-              <Stack.Screen
-                name="add-transaction"
-                options={{
-                  presentation: "transparentModal",
-                  animation: "slide_from_bottom",
-                  contentStyle: { backgroundColor: "transparent" },
-                }}
-              />
-              <Stack.Screen
-                name="settings"
-                options={{ presentation: "card", animation: "slide_from_right" }}
-              />
-              <Stack.Screen
-                name="goals"
-                options={{ presentation: "card", animation: "slide_from_right" }}
-              />
-              <Stack.Screen
-                name="export"
-                options={{ presentation: "card", animation: "slide_from_right" }}
-              />
-            </Stack>
-          </View>
-        </CurrencyProvider>
+        <AuthProvider>
+          <CurrencyProvider>
+            <View style={{ flex: 1, backgroundColor: colors.surface }}>
+              <StatusBar style="dark" />
+              <AuthGate>
+                <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }}>
+                  <Stack.Screen name="auth" options={{ animation: "fade" }} />
+                  <Stack.Screen name="(tabs)" />
+                  <Stack.Screen
+                    name="add-transaction"
+                    options={{
+                      presentation: "transparentModal",
+                      animation: "slide_from_bottom",
+                      contentStyle: { backgroundColor: "transparent" },
+                    }}
+                  />
+                  <Stack.Screen
+                    name="settings"
+                    options={{ presentation: "card", animation: "slide_from_right" }}
+                  />
+                  <Stack.Screen
+                    name="goals"
+                    options={{ presentation: "card", animation: "slide_from_right" }}
+                  />
+                  <Stack.Screen
+                    name="export"
+                    options={{ presentation: "card", animation: "slide_from_right" }}
+                  />
+                </Stack>
+              </AuthGate>
+            </View>
+          </CurrencyProvider>
+        </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

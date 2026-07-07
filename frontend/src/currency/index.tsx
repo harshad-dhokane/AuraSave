@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { supabase } from "@/src/lib/supabase";
 
 export interface Currency {
   code: string;
@@ -23,8 +23,6 @@ export const CURRENCIES: Currency[] = [
   { code: "IDR", symbol: "Rp", name: "Indonesian Rupiah", locale: "id-ID" },
 ];
 
-const STORAGE_KEY = "aura:currency";
-
 interface Ctx {
   currency: Currency;
   setCurrency: (c: Currency) => Promise<void>;
@@ -44,11 +42,17 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          const stored = JSON.parse(raw) as Currency;
-          const match = CURRENCIES.find((c) => c.code === stored.code) || stored;
-          setCurrencyState(match);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data } = await supabase
+            .from("profiles")
+            .select("currency")
+            .eq("id", user.id)
+            .single();
+          if (data?.currency) {
+            const match = CURRENCIES.find((c) => c.code === data.currency);
+            if (match) setCurrencyState(match);
+          }
         }
       } catch {}
       setReady(true);
@@ -57,7 +61,15 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
 
   const setCurrency = useCallback(async (c: Currency) => {
     setCurrencyState(c);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(c));
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase
+          .from("profiles")
+          .update({ currency: c.code })
+          .eq("id", user.id);
+      }
+    } catch {}
   }, []);
 
   return (

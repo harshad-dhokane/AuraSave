@@ -20,11 +20,13 @@ import * as Haptics from "expo-haptics";
 import { colors, radius, spacing, shadow } from "@/src/theme";
 import { getProfile, setProfile, clearAllData, seedIfNeeded, getTransactions } from "@/src/store";
 import { useCurrency, CURRENCIES, Currency } from "@/src/currency";
+import { useAuth } from "@/src/context/AuthContext";
 
 export default function Settings() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { currency, setCurrency } = useCurrency();
+  const { user, signOut } = useAuth();
   const [name, setName] = useState("");
   const [editing, setEditing] = useState(false);
   const [tempName, setTempName] = useState("");
@@ -47,26 +49,6 @@ export default function Settings() {
     setName(n);
     setEditing(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  };
-
-  const doReset = () => {
-    Alert.alert(
-      "Reset all data?",
-      "This will erase every transaction, budget, and goal. Sample data will be seeded again.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Reset",
-          style: "destructive",
-          onPress: async () => {
-            await clearAllData();
-            await seedIfNeeded();
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-            load();
-          },
-        },
-      ]
-    );
   };
 
   const doClearAll = () => {
@@ -112,7 +94,7 @@ export default function Settings() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.profileName}>{name === "there" ? "Set your name" : name}</Text>
-            <Text style={styles.profileSub}>Aura Wealth · Offline</Text>
+            <Text style={styles.profileSub}>{user?.email || "Aura Wealth"}</Text>
           </View>
           <Pressable testID="edit-name-btn" style={styles.editBtn} onPress={() => setEditing(true)}>
             <Ionicons name="pencil" size={16} color={colors.brand} />
@@ -129,7 +111,19 @@ export default function Settings() {
             value={`${currency.name} (${currency.symbol})`}
             onPress={() => setPickingCurrency(true)}
           />
-          <SettingRow icon="cloud-offline" color={colors.info} title="Data storage" value="On-device only" />
+          <SettingRow icon="cloud" color={colors.info} title="Data storage" value="Synced securely" />
+        </RowGroup>
+
+        <SectionLabel text="Account" />
+        <RowGroup>
+          <SettingRow
+            testID="sign-out-btn"
+            icon="log-out-outline"
+            color={colors.error}
+            title="Sign out"
+            value=""
+            onPress={signOut}
+          />
         </RowGroup>
 
         <SectionLabel text="Shortcuts" />
@@ -161,14 +155,6 @@ export default function Settings() {
             title="Export to Excel (CSV)"
             value="Choose a date range"
             onPress={() => router.push("/export")}
-          />
-          <SettingRow
-            testID="reset-btn"
-            icon="refresh"
-            color={colors.warning}
-            title="Reset with sample data"
-            value=""
-            onPress={doReset}
           />
           <SettingRow
             testID="clear-all-btn"
