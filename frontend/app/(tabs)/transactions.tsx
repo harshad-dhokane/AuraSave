@@ -15,7 +15,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 
 import { colors, radius, spacing, shadow } from "@/src/theme";
-import { formatINR, formatDayLabel } from "@/src/utils/format";
+import { formatDayLabel, formatMoney } from "@/src/utils/format";
 import {
   getTransactions,
   getCategories,
@@ -25,6 +25,7 @@ import {
   TxType,
 } from "@/src/store";
 import { CategoryIcon, EmptyState } from "@/src/components/CategoryIcon";
+import { useCurrency } from "@/src/currency";
 
 const FILTERS: { key: TxType | "all"; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: "all", label: "All", icon: "layers-outline" },
@@ -36,6 +37,7 @@ const FILTERS: { key: TxType | "all"; label: string; icon: keyof typeof Ionicons
 export default function TransactionsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { currency } = useCurrency();
   const [txs, setTxs] = useState<Transaction[]>([]);
   const [cats, setCats] = useState<Category[]>([]);
   const [filter, setFilter] = useState<TxType | "all">("all");
@@ -105,7 +107,7 @@ export default function TransactionsScreen() {
         <View style={styles.headerRow}>
           <View>
             <Text style={styles.title}>Transactions</Text>
-            <Text style={styles.subtitle}>{filtered.length} entries · {formatINR(filtered.reduce((s, t) => s + (t.type === "expense" || t.type === "investment" ? -t.amount : t.amount), 0))}</Text>
+            <Text style={styles.subtitle}>{filtered.length} entries · {formatMoney(filtered.reduce((s, t) => s + (t.type === "expense" || t.type === "investment" ? -t.amount : t.amount), 0), currency)}</Text>
           </View>
           <Pressable
             testID="tx-add-btn"
@@ -204,7 +206,7 @@ export default function TransactionsScreen() {
                       </View>
                       <Text style={[styles.rowAmount, { color }]}>
                         {isCredit ? "+" : "-"}
-                        {formatINR(t.amount)}
+                        {formatMoney(t.amount, currency)}
                       </Text>
                     </Pressable>
                   );

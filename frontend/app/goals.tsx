@@ -17,13 +17,15 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 
 import { colors, radius, spacing, shadow } from "@/src/theme";
-import { formatINR } from "@/src/utils/format";
+import { formatMoney } from "@/src/utils/format";
 import { getGoals, addGoal, updateGoal, deleteGoal, Goal } from "@/src/store";
 import { EmptyState } from "@/src/components/CategoryIcon";
+import { useCurrency } from "@/src/currency";
 
 export default function Goals() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { currency } = useCurrency();
   const params = useLocalSearchParams<{ edit?: string }>();
   const [goals, setGoals] = useState<Goal[]>([]);
   const [modal, setModal] = useState<{ visible: boolean; goal?: Goal }>({ visible: false });
@@ -103,8 +105,8 @@ export default function Goals() {
         <View style={styles.summary}>
           <Text style={styles.summaryLabel}>OVERALL PROGRESS</Text>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", marginTop: 2 }}>
-            <Text style={styles.summarySaved}>{formatINR(totals.saved)}</Text>
-            <Text style={styles.summaryOf}>of {formatINR(totals.target)}</Text>
+            <Text style={styles.summarySaved}>{formatMoney(totals.saved, currency)}</Text>
+            <Text style={styles.summaryOf}>of {formatMoney(totals.target, currency)}</Text>
           </View>
           <Bar value={totals.saved} max={totals.target || 1} />
           <Text style={styles.summaryHint}>
@@ -127,7 +129,7 @@ export default function Goals() {
                     <View style={{ flex: 1, marginLeft: 12 }}>
                       <Text style={styles.goalTitle}>{g.title}</Text>
                       <Text style={styles.goalMeta}>
-                        {formatINR(g.saved)} <Text style={{ color: colors.muted }}>of {formatINR(g.target)}</Text>
+                        {formatMoney(g.saved, currency)} <Text style={{ color: colors.muted }}>of {formatMoney(g.target, currency)}</Text>
                       </Text>
                     </View>
                     <Text style={styles.goalPct}>{Math.round(pct)}%</Text>

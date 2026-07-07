@@ -16,7 +16,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 
 import { colors, radius, spacing, shadow } from "@/src/theme";
-import { formatINR, currentMonthKey, monthLabel } from "@/src/utils/format";
+import { formatMoney, currentMonthKey, monthLabel } from "@/src/utils/format";
 import {
   getTransactions,
   getCategories,
@@ -30,10 +30,12 @@ import {
   Goal,
 } from "@/src/store";
 import { CategoryIcon, EmptyState } from "@/src/components/CategoryIcon";
+import { useCurrency } from "@/src/currency";
 
 export default function BudgetsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { currency } = useCurrency();
   const [tab, setTab] = useState<"budgets" | "goals">("budgets");
   const [txs, setTxs] = useState<Transaction[]>([]);
   const [cats, setCats] = useState<Category[]>([]);
@@ -133,16 +135,16 @@ export default function BudgetsScreen() {
             <View style={styles.overallCard}>
               <Text style={styles.overallLabel}>MONTHLY LIMIT</Text>
               <View style={{ flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", marginTop: 4 }}>
-                <Text style={styles.overallSpent}>{formatINR(totalSpent)}</Text>
-                <Text style={styles.overallOf}>of {formatINR(totalBudget)}</Text>
+                <Text style={styles.overallSpent}>{formatMoney(totalSpent, currency)}</Text>
+                <Text style={styles.overallOf}>of {formatMoney(totalBudget, currency)}</Text>
               </View>
               <BudgetBar spent={totalSpent} limit={totalBudget || 1} large />
               <Text style={styles.overallSub}>
                 {totalBudget === 0
                   ? "Set your first budget below"
                   : totalSpent > totalBudget
-                  ? `Over by ${formatINR(totalSpent - totalBudget)}`
-                  : `${formatINR(Math.max(0, totalBudget - totalSpent))} remaining this month`}
+                  ? `Over by ${formatMoney(totalSpent - totalBudget, currency)}`
+                  : `${formatMoney(Math.max(0, totalBudget - totalSpent), currency)} remaining this month`}
               </Text>
             </View>
 
@@ -179,7 +181,7 @@ export default function BudgetsScreen() {
                         <View style={{ flex: 1, marginLeft: 12 }}>
                           <Text style={styles.budgetName}>{c?.name || "Uncategorized"}</Text>
                           <Text style={styles.budgetMeta}>
-                            {formatINR(spent)} <Text style={{ color: colors.muted }}>of {formatINR(b.limit)}</Text>
+                            {formatMoney(spent, currency)} <Text style={{ color: colors.muted }}>of {formatMoney(b.limit, currency)}</Text>
                           </Text>
                         </View>
                         <Text style={[styles.budgetPct, { color: over ? colors.error : colors.brand }]}>
@@ -220,7 +222,7 @@ export default function BudgetsScreen() {
                         <View style={{ flex: 1 }}>
                           <Text style={styles.goalTitle}>{g.title}</Text>
                           <Text style={styles.goalSub}>
-                            {formatINR(g.saved)} <Text style={{ color: colors.muted }}>saved of {formatINR(g.target)}</Text>
+                            {formatMoney(g.saved, currency)} <Text style={{ color: colors.muted }}>saved of {formatMoney(g.target, currency)}</Text>
                           </Text>
                         </View>
                         <View style={styles.goalPctBadge}>

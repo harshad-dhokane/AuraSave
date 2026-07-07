@@ -15,7 +15,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 
 import { colors, radius, spacing, shadow } from "@/src/theme";
-import { formatINR, formatDayLabel, currentMonthKey } from "@/src/utils/format";
+import { formatDayLabel, currentMonthKey, formatMoney } from "@/src/utils/format";
 import {
   getTransactions,
   getCategories,
@@ -25,6 +25,7 @@ import {
   Profile,
 } from "@/src/store";
 import { CategoryIcon } from "@/src/components/CategoryIcon";
+import { useCurrency } from "@/src/currency";
 
 const HERO_BG =
   "https://images.unsplash.com/photo-1629197520635-16570fbd0bb3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNzl8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGdyZWVuJTIwYWVzdGhldGljJTIwdGV4dHVyZXxlbnwwfHx8fDE3ODI1NzM3MTl8MA&ixlib=rb-4.1.0&q=85";
@@ -32,6 +33,7 @@ const HERO_BG =
 export default function Home() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { currency } = useCurrency();
   const [txs, setTxs] = useState<Transaction[]>([]);
   const [cats, setCats] = useState<Category[]>([]);
   const [profile, setProfileState] = useState<Profile>({ name: "there" });
@@ -136,16 +138,16 @@ export default function Home() {
             <Text style={styles.heroBadgeText}>Total Balance</Text>
           </View>
           <Text testID="home-total-balance" style={styles.heroAmount}>
-            {formatINR(totalBalance)}
+            {formatMoney(totalBalance, currency)}
           </Text>
-          <Text style={styles.heroSub}>as of {new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</Text>
+          <Text style={styles.heroSub}>as of {new Date().toLocaleDateString(undefined, { day: "numeric", month: "short" })}</Text>
 
           <View style={styles.heroStatsRow}>
-            <HeroStat label="Income" value={monthly.income} tint="#B7E4C7" icon="arrow-down" />
+            <HeroStat label="Income" value={monthly.income} tint="#B7E4C7" icon="arrow-down" currencyCode={currency.code} formatter={(v) => formatMoney(v, currency, { compact: true })} />
             <View style={styles.heroDivider} />
-            <HeroStat label="Spent" value={monthly.expense} tint="#F5C0BE" icon="arrow-up" />
+            <HeroStat label="Spent" value={monthly.expense} tint="#F5C0BE" icon="arrow-up" currencyCode={currency.code} formatter={(v) => formatMoney(v, currency, { compact: true })} />
             <View style={styles.heroDivider} />
-            <HeroStat label="Invested" value={monthly.invest} tint="#F4D9A0" icon="trending-up" />
+            <HeroStat label="Invested" value={monthly.invest} tint="#F4D9A0" icon="trending-up" currencyCode={currency.code} formatter={(v) => formatMoney(v, currency, { compact: true })} />
           </View>
         </View>
       </View>
@@ -174,11 +176,11 @@ export default function Home() {
           onPress={() => router.push("/add-transaction?type=investment")}
         />
         <QuickAction
-          testID="qa-goals"
-          icon="flag"
-          label="Goals"
+          testID="qa-scan-sms"
+          icon="scan"
+          label="Scan SMS"
           color={colors.warning}
-          onPress={() => router.push("/goals")}
+          onPress={() => router.push("/paste-sms")}
         />
       </View>
 
@@ -192,7 +194,7 @@ export default function Home() {
       <View style={styles.portfolioCard}>
         <View style={{ flex: 1 }}>
           <Text style={styles.portfolioLabel}>Total Invested</Text>
-          <Text style={styles.portfolioValue}>{formatINR(totalInvested)}</Text>
+          <Text style={styles.portfolioValue}>{formatMoney(totalInvested, currency)}</Text>
           <View style={styles.portfolioMeta}>
             <Ionicons name="trending-up" size={13} color={colors.success} />
             <Text style={styles.portfolioMetaText}>Consistent monthly SIPs help beat inflation.</Text>
@@ -251,7 +253,7 @@ export default function Home() {
                       { color: isCredit ? colors.success : t.type === "expense" ? colors.error : colors.brandPrimary },
                     ]}
                   >
-                    {isCredit ? "+" : "-"}{formatINR(t.amount).replace("₹", "₹")}
+                    {isCredit ? "+" : "-"}{formatMoney(t.amount, currency)}
                   </Text>
                   <Text style={styles.txDate}>{formatDayLabel(t.date)}</Text>
                 </View>
@@ -276,11 +278,15 @@ function HeroStat({
   value,
   tint,
   icon,
+  currencyCode: _cc,
+  formatter,
 }: {
   label: string;
   value: number;
   tint: string;
   icon: keyof typeof Ionicons.glyphMap;
+  currencyCode: string;
+  formatter: (v: number) => string;
 }) {
   return (
     <View style={{ flex: 1, alignItems: "flex-start" }}>
@@ -289,7 +295,7 @@ function HeroStat({
         <Text style={styles.heroStatLabel}>{label}</Text>
       </View>
       <Text style={styles.heroStatValue} numberOfLines={1}>
-        {formatINR(value, { compact: true })}
+        {formatter(value)}
       </Text>
     </View>
   );

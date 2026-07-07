@@ -1,5 +1,17 @@
 import React, { useCallback, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, Alert, TextInput, Modal, KeyboardAvoidingView, Platform } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  ScrollView,
+  Alert,
+  TextInput,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
+  FlatList,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -7,14 +19,17 @@ import * as Haptics from "expo-haptics";
 
 import { colors, radius, spacing, shadow } from "@/src/theme";
 import { getProfile, setProfile, clearAllData, seedIfNeeded, getTransactions } from "@/src/store";
+import { useCurrency, CURRENCIES, Currency } from "@/src/currency";
 
 export default function Settings() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { currency, setCurrency } = useCurrency();
   const [name, setName] = useState("");
   const [editing, setEditing] = useState(false);
   const [tempName, setTempName] = useState("");
   const [txCount, setTxCount] = useState(0);
+  const [pickingCurrency, setPickingCurrency] = useState(false);
 
   const load = useCallback(async () => {
     const p = await getProfile();
@@ -73,6 +88,12 @@ export default function Settings() {
     );
   };
 
+  const chooseCurrency = async (c: Currency) => {
+    await setCurrency(c);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setPickingCurrency(false);
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
@@ -100,17 +121,47 @@ export default function Settings() {
 
         <SectionLabel text="Preferences" />
         <RowGroup>
-          <SettingRow icon="cash" color={colors.brandPrimary} title="Currency" value="Indian Rupee (₹)" chevron={false} />
-          <SettingRow icon="cloud-offline" color={colors.info} title="Data storage" value="On-device only" chevron={false} />
+          <SettingRow
+            testID="currency-row"
+            icon="cash"
+            color={colors.brandPrimary}
+            title="Currency"
+            value={`${currency.name} (${currency.symbol})`}
+            onPress={() => setPickingCurrency(true)}
+          />
+          <SettingRow icon="cloud-offline" color={colors.info} title="Data storage" value="On-device only" />
         </RowGroup>
 
-        <SectionLabel text="Statistics" />
+        <SectionLabel text="Shortcuts" />
         <RowGroup>
-          <SettingRow icon="receipt" color={colors.brandSecondary} title="Total transactions" value={String(txCount)} chevron={false} />
+          <SettingRow
+            testID="settings-scan-sms"
+            icon="scan"
+            color={colors.warning}
+            title="Scan SMS message"
+            value="Auto-add from bank alerts"
+            onPress={() => router.push("/paste-sms")}
+          />
+          <SettingRow
+            testID="settings-goals"
+            icon="flag"
+            color={colors.brandSecondary}
+            title="Savings goals"
+            value="Track your targets"
+            onPress={() => router.push("/goals")}
+          />
         </RowGroup>
 
         <SectionLabel text="Data" />
         <RowGroup>
+          <SettingRow
+            testID="export-btn"
+            icon="cloud-download"
+            color={colors.brand}
+            title="Export to Excel (CSV)"
+            value="Choose a date range"
+            onPress={() => router.push("/export")}
+          />
           <SettingRow
             testID="reset-btn"
             icon="refresh"
@@ -129,9 +180,15 @@ export default function Settings() {
           />
         </RowGroup>
 
+        <SectionLabel text="Statistics" />
+        <RowGroup>
+          <SettingRow icon="receipt" color={colors.brandSecondary} title="Total transactions" value={String(txCount)} />
+        </RowGroup>
+
         <Text style={styles.footer}>Aura Wealth · v1.0 · Built with care</Text>
       </ScrollView>
 
+      {/* Name modal */}
       <Modal transparent visible={editing} animationType="fade" onRequestClose={() => setEditing(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", padding: 24 }}>
           <View style={styles.editCard}>
@@ -156,6 +213,42 @@ export default function Settings() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Currency picker */}
+      <Modal transparent visible={pickingCurrency} animationType="slide" onRequestClose={() => setPickingCurrency(false)}>
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" }}>
+          <Pressable style={{ flex: 1 }} onPress={() => setPickingCurrency(false)} />
+          <View style={[styles.sheet, { paddingBottom: insets.bottom + 12 }]}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>Choose currency</Text>
+            <Text style={styles.sheetSub}>All amounts across the app will update instantly.</Text>
+            <FlatList
+              data={CURRENCIES}
+              keyExtractor={(c) => c.code}
+              style={{ maxHeight: 380, marginTop: 8 }}
+              renderItem={({ item }) => {
+                const active = item.code === currency.code;
+                return (
+                  <Pressable
+                    testID={`cur-${item.code}`}
+                    onPress={() => chooseCurrency(item)}
+                    style={[styles.curRow, active && { backgroundColor: colors.brandTertiary }]}
+                  >
+                    <View style={styles.curSymbol}>
+                      <Text style={styles.curSymbolText}>{item.symbol}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.curName}>{item.name}</Text>
+                      <Text style={styles.curCode}>{item.code}</Text>
+                    </View>
+                    {active && <Ionicons name="checkmark-circle" size={20} color={colors.brand} />}
+                  </Pressable>
+                );
+              }}
+            />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -174,7 +267,6 @@ function SettingRow({
   title,
   value,
   onPress,
-  chevron = true,
   testID,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
@@ -182,7 +274,6 @@ function SettingRow({
   title: string;
   value: string;
   onPress?: () => void;
-  chevron?: boolean;
   testID?: string;
 }) {
   return (
@@ -194,7 +285,7 @@ function SettingRow({
         <Text style={styles.rowTitle}>{title}</Text>
         {value ? <Text style={styles.rowValue}>{value}</Text> : null}
       </View>
-      {chevron && onPress && <Ionicons name="chevron-forward" size={16} color={colors.muted} />}
+      {onPress && <Ionicons name="chevron-forward" size={16} color={colors.muted} />}
     </Pressable>
   );
 }
@@ -313,4 +404,40 @@ const styles = StyleSheet.create({
   formBtnGhostText: { color: colors.onSurface, fontWeight: "700" },
   formBtnPrimary: { backgroundColor: colors.brand },
   formBtnPrimaryText: { color: "#fff", fontWeight: "800" },
+  sheet: {
+    backgroundColor: colors.surfaceSecondary,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.borderStrong,
+    alignSelf: "center",
+    marginBottom: 12,
+  },
+  sheetTitle: { fontSize: 18, fontWeight: "800", color: colors.onSurface },
+  sheetSub: { fontSize: 12, color: colors.muted, marginTop: 4 },
+  curRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 12,
+    borderRadius: radius.md,
+    marginBottom: 6,
+  },
+  curSymbol: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surfaceTertiary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  curSymbolText: { fontSize: 16, fontWeight: "800", color: colors.onSurface },
+  curName: { fontSize: 14, fontWeight: "700", color: colors.onSurface },
+  curCode: { fontSize: 12, color: colors.muted, marginTop: 2 },
 });

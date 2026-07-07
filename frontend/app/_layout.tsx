@@ -9,6 +9,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { seedIfNeeded } from "@/src/store";
 import { colors } from "@/src/theme";
+import { CurrencyProvider } from "@/src/currency";
 
 
 // Disable logbox errors etc so that users can see the app
@@ -42,24 +43,34 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <View style={{ flex: 1, backgroundColor: colors.surface }}>
-          <StatusBar style="dark" />
-          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }}>
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen
-              name="add-transaction"
-              options={{ presentation: "modal", animation: "slide_from_bottom" }}
-            />
-            <Stack.Screen
-              name="settings"
-              options={{ presentation: "card", animation: "slide_from_right" }}
-            />
-            <Stack.Screen
-              name="goals"
-              options={{ presentation: "card", animation: "slide_from_right" }}
-            />
-          </Stack>
-        </View>
+        <CurrencyProvider>
+          <View style={{ flex: 1, backgroundColor: colors.surface }}>
+            <StatusBar style="dark" />
+            <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }}>
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen
+                name="add-transaction"
+                options={{ presentation: "modal", animation: "slide_from_bottom" }}
+              />
+              <Stack.Screen
+                name="paste-sms"
+                options={{ presentation: "modal", animation: "slide_from_bottom" }}
+              />
+              <Stack.Screen
+                name="settings"
+                options={{ presentation: "card", animation: "slide_from_right" }}
+              />
+              <Stack.Screen
+                name="goals"
+                options={{ presentation: "card", animation: "slide_from_right" }}
+              />
+              <Stack.Screen
+                name="export"
+                options={{ presentation: "card", animation: "slide_from_right" }}
+              />
+            </Stack>
+          </View>
+        </CurrencyProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

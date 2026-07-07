@@ -17,6 +17,7 @@ import * as Haptics from "expo-haptics";
 
 import { colors, radius, spacing, shadow } from "@/src/theme";
 import { getCategories, addTransaction, Category, TxType } from "@/src/store";
+import { useCurrency } from "@/src/currency";
 
 const TYPE_OPTIONS: { key: TxType; label: string; color: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: "expense", label: "Expense", color: colors.error, icon: "arrow-up-circle" },
@@ -27,13 +28,19 @@ const TYPE_OPTIONS: { key: TxType; label: string; color: string; icon: keyof typ
 export default function AddTransaction() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const params = useLocalSearchParams<{ type?: string }>();
+  const { currency } = useCurrency();
+  const params = useLocalSearchParams<{
+    type?: string;
+    amount?: string;
+    note?: string;
+    categoryId?: string;
+  }>();
   const initialType = (params.type as TxType) || "expense";
 
   const [type, setType] = useState<TxType>(initialType);
-  const [amount, setAmount] = useState("");
-  const [note, setNote] = useState("");
-  const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [amount, setAmount] = useState(params.amount || "");
+  const [note, setNote] = useState(params.note || "");
+  const [categoryId, setCategoryId] = useState<string | null>(params.categoryId || null);
   const [cats, setCats] = useState<Category[]>([]);
   const [date, setDate] = useState(new Date());
   const [saving, setSaving] = useState(false);
@@ -46,9 +53,14 @@ export default function AddTransaction() {
   }, []);
 
   useEffect(() => {
-    // Reset category when type changes
+    // If prefilled category matches type, keep it; else reset to first of type.
+    if (categoryId) {
+      const found = cats.find((c) => c.id === categoryId);
+      if (found && found.type === type) return;
+    }
     const first = cats.find((c) => c.type === type);
     setCategoryId(first ? first.id : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type, cats]);
 
   const filtered = useMemo(() => cats.filter((c) => c.type === type), [cats, type]);
@@ -79,6 +91,8 @@ export default function AddTransaction() {
     { label: "Today", days: 0 },
     { label: "Yesterday", days: 1 },
     { label: "2 days ago", days: 2 },
+    { label: "3 days ago", days: 3 },
+    { label: "1 week ago", days: 7 },
   ];
 
   return (
@@ -131,9 +145,9 @@ export default function AddTransaction() {
           })}
         </View>
 
-        {/* Amount input */}
+        {/* 1. Amount */}
         <View style={styles.amountWrap}>
-          <Text style={styles.amountCurrency}>₹</Text>
+          <Text style={styles.amountCurrency}>{currency.symbol}</Text>
           <TextInput
             testID="amount-input"
             value={amount}
@@ -146,41 +160,13 @@ export default function AddTransaction() {
           />
         </View>
 
-        {/* Categories */}
-        <Text style={styles.sectionLabel}>Category</Text>
-        <View style={styles.catGrid}>
-          {filtered.map((c) => {
-            const active = categoryId === c.id;
-            return (
-              <Pressable
-                key={c.id}
-                testID={`cat-${c.id}`}
-                onPress={() => {
-                  Haptics.selectionAsync();
-                  setCategoryId(c.id);
-                }}
-                style={[
-                  styles.catCell,
-                  active && { backgroundColor: c.color + "1A", borderColor: c.color },
-                ]}
-              >
-                <View style={[styles.catIcon, { backgroundColor: c.color + "22" }]}>
-                  <Ionicons name={c.icon as any} size={20} color={c.color} />
-                </View>
-                <Text
-                  style={[styles.catLabel, active && { color: c.color, fontWeight: "800" }]}
-                  numberOfLines={1}
-                >
-                  {c.name}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        {/* Date shortcuts */}
+        {/* 2. Date */}
         <Text style={styles.sectionLabel}>Date</Text>
-        <View style={styles.dateRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.dateRow}
+        >
           {dateShortcuts.map((d) => {
             const dt = new Date();
             dt.setDate(dt.getDate() - d.days);
@@ -201,9 +187,41 @@ export default function AddTransaction() {
               </Pressable>
             );
           })}
+        </ScrollView>
+
+        {/* 3. Category (4-column compact grid) */}
+        <Text style={styles.sectionLabel}>Category</Text>
+        <View style={styles.catGrid}>
+          {filtered.map((c) => {
+            const active = categoryId === c.id;
+            return (
+              <Pressable
+                key={c.id}
+                testID={`cat-${c.id}`}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setCategoryId(c.id);
+                }}
+                style={[
+                  styles.catCell,
+                  active && { backgroundColor: c.color + "1A", borderColor: c.color },
+                ]}
+              >
+                <View style={[styles.catIcon, { backgroundColor: c.color + "22" }]}>
+                  <Ionicons name={c.icon as any} size={16} color={c.color} />
+                </View>
+                <Text
+                  style={[styles.catLabel, active && { color: c.color, fontWeight: "800" }]}
+                  numberOfLines={1}
+                >
+                  {c.name}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
 
-        {/* Note */}
+        {/* 4. Note */}
         <Text style={styles.sectionLabel}>Note (optional)</Text>
         <TextInput
           testID="note-input"
@@ -264,14 +282,14 @@ const styles = StyleSheet.create({
   },
   typeBtn: {
     flex: 1,
-    height: 56,
+    height: 52,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surfaceSecondary,
     alignItems: "center",
     justifyContent: "center",
-    gap: 4,
+    gap: 2,
   },
   typeText: {
     fontSize: 12,
@@ -280,17 +298,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 24,
+    marginTop: 20,
     paddingHorizontal: 20,
   },
   amountCurrency: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: "700",
     color: colors.muted,
     marginRight: 6,
   },
   amountInput: {
-    fontSize: 56,
+    fontSize: 52,
     fontWeight: "800",
     letterSpacing: -1.5,
     minWidth: 60,
@@ -304,53 +322,24 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     fontWeight: "700",
     marginHorizontal: spacing.lg,
-    marginTop: 24,
-    marginBottom: 10,
-  },
-  catGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    paddingHorizontal: spacing.lg - 4,
-    gap: 8,
-  },
-  catCell: {
-    width: "31%",
-    marginHorizontal: 4,
-    padding: 12,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceSecondary,
-    alignItems: "center",
-    gap: 6,
-  },
-  catIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  catLabel: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: colors.onSurface,
-    textAlign: "center",
+    marginTop: 18,
+    marginBottom: 8,
   },
   dateRow: {
-    flexDirection: "row",
     paddingHorizontal: spacing.lg,
     gap: 8,
+    paddingBottom: 2,
   },
   dateChip: {
     paddingHorizontal: 14,
-    height: 36,
+    height: 34,
     borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surfaceSecondary,
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
   },
   dateChipActive: {
     backgroundColor: colors.brand,
@@ -363,17 +352,47 @@ const styles = StyleSheet.create({
   },
   dateChipTextActive: {
     color: "#fff",
+    fontWeight: "700",
   },
-  noteInput: {
-    marginHorizontal: spacing.lg,
-    padding: 14,
+  catGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    paddingHorizontal: spacing.lg,
+    gap: 8,
+  },
+  catCell: {
+    width: "23%",
+    padding: 8,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surfaceSecondary,
-    fontSize: 15,
+    alignItems: "center",
+    gap: 4,
+  },
+  catIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  catLabel: {
+    fontSize: 10,
+    fontWeight: "600",
     color: colors.onSurface,
-    minHeight: 70,
+    textAlign: "center",
+  },
+  noteInput: {
+    marginHorizontal: spacing.lg,
+    padding: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
+    fontSize: 14,
+    color: colors.onSurface,
+    minHeight: 64,
     textAlignVertical: "top",
   },
   footer: {
