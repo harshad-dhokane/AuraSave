@@ -12,8 +12,33 @@ import { getGoals, getGoalContributions, Goal, GoalContribution, addGoalContribu
 import { useCurrency } from "@/src/currency";
 import { EmptyState } from "@/src/components/CategoryIcon";
 import { useTheme } from "@/src/theme/ThemeContext";
+
+function monthsLeft(deadline?: string) {
+  if (!deadline) return 0;
+  const diff = new Date(deadline).getTime() - Date.now();
+  return Math.max(1, Math.ceil(diff / (1000 * 60 * 60 * 24 * 30)));
+}
+
+function monthlyNeeded(goal: Goal) {
+  if (!goal.deadline) return 0;
+  return Math.max(0, goal.target - goal.saved) / monthsLeft(goal.deadline);
+}
+
+function healthLabel(goal: Goal) {
+  if (goal.status === "completed") return "Completed";
+  if (goal.isArchived) return "Archived";
+  if (goal.isPaused) return "Paused";
+  if (!goal.deadline) return "No deadline";
+  if (new Date(goal.deadline).getTime() < Date.now()) return "Overdue";
+  const needed = monthlyNeeded(goal);
+  const planned = goal.autoContributionAmount || 0;
+  if (planned >= needed) return "On track";
+  if (planned >= needed * 0.75) return "Close";
+  return "Behind";
+}
+
 export default function GoalDetailScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const s = useMemo(() => createStyles(colors), [colors]);
 
   const { id, initialGoal } = useLocalSearchParams<{ id: string; initialGoal?: string }>();
@@ -27,6 +52,7 @@ export default function GoalDetailScreen() {
   // Add funds modal state
   const [showAdd, setShowAdd] = useState(false);
   const [contributionAmt, setContributionAmt] = useState("");
+  const blurTint = isDark ? "systemUltraThinMaterialDark" : "systemUltraThinMaterialLight";
 
   useEffect(() => {
     load();
@@ -57,6 +83,10 @@ export default function GoalDetailScreen() {
 
   const submitFunds = async () => {
     if (!goal) return;
+    if (goal.isPaused || goal.isArchived) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
     const amt = Number(contributionAmt);
     if (!amt || amt <= 0) { 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error); 
@@ -72,10 +102,27 @@ export default function GoalDetailScreen() {
     load();
   };
 
+  const togglePaused = async () => {
+    if (!goal || goal.status === "completed") return;
+    await updateGoal(goal.id, { isPaused: !goal.isPaused });
+    Haptics.selectionAsync();
+    load();
+  };
+
+  const toggleArchived = async () => {
+    if (!goal) return;
+    await updateGoal(goal.id, { isArchived: !goal.isArchived, isPaused: false });
+    Haptics.selectionAsync();
+    load();
+  };
+
   if (!goal) return <View style={{ flex: 1, backgroundColor: colors.surface }} />;
 
   const p = Math.min(100, (goal.saved / goal.target) * 100);
   const done = goal.status === "completed";
+  const needed = monthlyNeeded(goal);
+  const health = healthLabel(goal);
+  const priorityColor = goal.priority === "high" ? colors.warning : goal.priority === "low" ? colors.info : colors.brand;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -91,7 +138,7 @@ export default function GoalDetailScreen() {
           <Ionicons name="arrow-back" size={24} color={colors.onSurface} />
         </Pressable>
         <Text style={s.title} numberOfLines={1}>{goal.title}</Text>
-        {!done ? (
+        {!done && !goal.isPaused && !goal.isArchived ? (
           <Pressable onPress={() => setShowAdd(true)} style={s.addBtn}>
             <Ionicons name="add" size={16} color={colors.surface} />
             <Text style={s.addBtnText}>Add</Text>
@@ -125,6 +172,45 @@ export default function GoalDetailScreen() {
           </View>
         </View>
 
+        <View style={s.metricGrid}>
+          <View style={s.metricBox}>
+            <Text style={s.metricLabel}>HEALTH</Text>
+            <Text style={[s.metricValue, { color: health === "Behind" || health === "Overdue" ? colors.error : health === "Close" ? colors.warning : colors.onSurface }]}>{health}</Text>
+          </View>
+          <View style={s.metricBox}>
+            <Text style={s.metricLabel}>NEEDED</Text>
+            <Text style={s.metricValue}>{needed > 0 ? `${formatMoney(needed, currency)}/mo` : "Not set"}</Text>
+          </View>
+          <View style={s.metricBox}>
+            <Text style={s.metricLabel}>AUTO PLAN</Text>
+            <Text style={s.metricValue}>{goal.autoContributionAmount ? `${formatMoney(goal.autoContributionAmount, currency)} on ${goal.autoContributionDay || 1}` : "Off"}</Text>
+          </View>
+          <View style={s.metricBox}>
+            <Text style={s.metricLabel}>PRIORITY</Text>
+            <Text style={[s.metricValue, { color: priorityColor }]}>{goal.priority || "medium"}</Text>
+          </View>
+        </View>
+
+        {goal.deadline && (
+          <View style={s.deadlineCard}>
+            <Ionicons name="calendar-outline" size={16} color={colors.brand} />
+            <Text style={s.deadlineText}>Deadline {formatDate(goal.deadline)} · {monthsLeft(goal.deadline)} month{monthsLeft(goal.deadline) > 1 ? "s" : ""} left</Text>
+          </View>
+        )}
+
+        {!done && (
+          <View style={s.actionRow}>
+            <Pressable onPress={togglePaused} style={s.secondaryAction}>
+              <Ionicons name={goal.isPaused ? "play-outline" : "pause-outline"} size={16} color={colors.onSurface} />
+              <Text style={s.secondaryActionText}>{goal.isPaused ? "Resume" : "Pause"}</Text>
+            </Pressable>
+            <Pressable onPress={toggleArchived} style={s.secondaryAction}>
+              <Ionicons name={goal.isArchived ? "archive-outline" : "file-tray-full-outline"} size={16} color={colors.onSurface} />
+              <Text style={s.secondaryActionText}>{goal.isArchived ? "Restore" : "Archive"}</Text>
+            </Pressable>
+          </View>
+        )}
+
         <Text style={s.sectionTitle}>Contribution History</Text>
         <View style={s.listCard}>
           {contributions.length === 0 ? (
@@ -156,7 +242,7 @@ export default function GoalDetailScreen() {
       {/* Add Funds Modal */}
       <Modal visible={showAdd} transparent animationType="fade">
         <View style={{ flex: 1, justifyContent: "center", padding: 24 }}>
-          <BlurView intensity={60} tint="default" style={StyleSheet.absoluteFill}><Pressable style={{ flex: 1 }} onPress={() => setShowAdd(false)} /></BlurView>
+          <BlurView intensity={45} tint={blurTint} blurReductionFactor={2} experimentalBlurMethod="dimezisBlurView" style={StyleSheet.absoluteFill}><Pressable style={{ flex: 1 }} onPress={() => setShowAdd(false)} /></BlurView>
           <View style={{ backgroundColor: colors.surface, borderRadius: 24, padding: 24 }}>
             <Text style={{ fontSize: 18, fontWeight: "800", color: colors.onSurface, marginBottom: 16 }}>Add Funds</Text>
             <Text style={{ fontSize: 11, color: colors.muted, textTransform: "uppercase", fontWeight: "700", marginBottom: 6 }}>Amount ({currency.symbol})</Text>
@@ -194,6 +280,15 @@ const createStyles = (colors: any) => StyleSheet.create({
   barFill: { height: "100%", borderRadius: 4 },
   pctText: { fontSize: 13, fontWeight: "800" },
   periodText: { fontSize: 12, color: colors.muted, fontWeight: "600" },
+  metricGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 12 },
+  metricBox: { width: "48%", padding: 12, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  metricLabel: { fontSize: 10, color: colors.muted, fontWeight: "800", letterSpacing: 0.4 },
+  metricValue: { fontSize: 13, color: colors.onSurface, fontWeight: "800", marginTop: 4, textTransform: "capitalize" },
+  deadlineCard: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 12, padding: 12, borderRadius: radius.md, backgroundColor: colors.brandTertiary },
+  deadlineText: { flex: 1, fontSize: 12, color: colors.onSurface, fontWeight: "700" },
+  actionRow: { flexDirection: "row", gap: 10, marginTop: 14 },
+  secondaryAction: { flex: 1, height: 42, borderRadius: radius.pill, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  secondaryActionText: { fontSize: 13, color: colors.onSurface, fontWeight: "800" },
   sectionTitle: { fontSize: 16, fontWeight: "800", color: colors.onSurface, marginTop: 32, marginBottom: 12, paddingHorizontal: 4 },
   listCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
   historyRow: { flexDirection: "row", alignItems: "center", paddingVertical: 14, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: colors.divider },

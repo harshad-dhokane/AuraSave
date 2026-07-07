@@ -26,6 +26,9 @@ export default function AddLoanScreen() {
   const [person, setPerson] = useState("");
   const [amount, setAmount] = useState("");
   const [notes, setNotes] = useState("");
+  const [interestRate, setInterestRate] = useState("");
+  const [proofNote, setProofNote] = useState("");
+  const [groupName, setGroupName] = useState("");
   const [repaymentExpected, setRepaymentExpected] = useState(true);
   
   const [date, setDate] = useState(new Date());
@@ -51,7 +54,7 @@ export default function AddLoanScreen() {
         date: date.toISOString(),
         type: targetType,
         categoryId: fallbackCat?.id || "",
-        note: (type === "lent" ? "Gift to " : "Gift from ") + person.trim() + (notes ? ` - ${notes.trim()}` : ""),
+        note: (type === "lent" ? "Gift to " : "Gift from ") + person.trim() + (notes ? ` - ${notes.trim()}` : "") + (groupName ? ` (${groupName.trim()})` : ""),
       });
     } else {
       await addLoan({
@@ -62,6 +65,9 @@ export default function AddLoanScreen() {
         dueDate: dueDate ? dueDate.toISOString() : undefined,
         repaymentExpected,
         notes: notes.trim() || undefined,
+        interestRate: Number(interestRate) || undefined,
+        proofNote: proofNote.trim() || undefined,
+        groupName: groupName.trim() || undefined,
       });
     }
     
@@ -137,6 +143,32 @@ export default function AddLoanScreen() {
             )}
           </View>
 
+          {repaymentExpected && (
+            <View style={{ flexDirection: "row", gap: 12, marginTop: 24 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={s.label}>Interest %</Text>
+                <TextInput
+                  value={interestRate}
+                  onChangeText={(v) => setInterestRate(v.replace(/[^0-9.]/g, ""))}
+                  placeholder="0"
+                  placeholderTextColor={colors.muted}
+                  keyboardType="decimal-pad"
+                  style={s.input}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.label}>Group / Split</Text>
+                <TextInput
+                  value={groupName}
+                  onChangeText={setGroupName}
+                  placeholder="Trip, rent..."
+                  placeholderTextColor={colors.muted}
+                  style={s.input}
+                />
+              </View>
+            </View>
+          )}
+
           <Pressable 
             style={[s.inputGroup, { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 24 }]} 
             onPress={() => setRepaymentExpected(!repaymentExpected)}
@@ -161,6 +193,19 @@ export default function AddLoanScreen() {
               multiline
             />
           </View>
+
+          {repaymentExpected && (
+            <View style={[s.inputGroup, { marginTop: 24 }]}>
+              <Text style={s.label}>Proof / Reference (Optional)</Text>
+              <TextInput
+                value={proofNote}
+                onChangeText={setProofNote}
+                placeholder="UPI ref, receipt number, screenshot note"
+                placeholderTextColor={colors.muted}
+                style={s.input}
+              />
+            </View>
+          )}
 
           <DatePickerModal
             visible={showDatePicker}

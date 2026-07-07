@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Modal,
-  TextInput, KeyboardAvoidingView, Platform, FlatList, Alert
+  TextInput, KeyboardAvoidingView, Platform
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -9,9 +9,9 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import * as Haptics from "expo-haptics";
 import { BlurView } from "expo-blur";
 import { radius, spacing, shadow } from "@/src/theme";
-import { formatMoney, currentMonthKey, monthLabel, formatDate } from "@/src/utils/format";
+import { formatMoney, currentMonthKey, monthLabel } from "@/src/utils/format";
 import {
-  getTransactions, getCategories, getBudgets, upsertBudget, deleteBudget,
+  getTransactions, getCategories, getBudgets, upsertBudget,
   Transaction, Category, Budget
 } from "@/src/store";
 import { CategoryIcon, EmptyState } from "@/src/components/CategoryIcon";
@@ -23,9 +23,44 @@ type ModalState =
   | { kind: "none" }
   | { kind: "edit"; categoryId?: string; limit: string }
 
+function shiftMonthKey(monthKey: string, offset: number) {
+  const [year, month] = monthKey.split("-").map(Number);
+  const date = new Date(year, month - 1 + offset, 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function daysInMonth(monthKey: string) {
+  const [year, month] = monthKey.split("-").map(Number);
+  return new Date(year, month, 0).getDate();
+}
+
+function elapsedDays(monthKey: string) {
+  const current = currentMonthKey();
+  if (monthKey < current) return daysInMonth(monthKey);
+  if (monthKey > current) return 0;
+  return new Date().getDate();
+}
+
+function monthProgress(monthKey: string) {
+  const days = daysInMonth(monthKey);
+  return Math.min(1, Math.max(0, elapsedDays(monthKey) / days));
+}
+
+function spentFor(txs: Transaction[], categoryId: string, monthKey: string) {
+  return txs
+    .filter((t) => t.type === "expense" && t.categoryId === categoryId && t.date.startsWith(monthKey))
+    .reduce((sum, t) => sum + t.amount, 0);
+}
+
+function projectedSpend(spent: number, monthKey: string) {
+  const elapsed = elapsedDays(monthKey);
+  if (elapsed <= 0) return 0;
+  if (monthKey !== currentMonthKey()) return spent;
+  return (spent / elapsed) * daysInMonth(monthKey);
+}
 
 export default function BudgetsScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const s = useMemo(() => createStyles(colors), [colors]);
 
   const insets = useSafeAreaInsets();
@@ -37,6 +72,7 @@ export default function BudgetsScreen() {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [modal, setModal] = useState<ModalState>({ kind: "none" });
   const [selectedMonth, setSelectedMonth] = useState(currentMonthKey());
+  const blurTint = isDark ? "systemUltraThinMaterialDark" : "systemUltraThinMaterialLight";
 
   const shiftMonth = (offset: number) => {
     Haptics.selectionAsync();
@@ -67,14 +103,40 @@ export default function BudgetsScreen() {
     return map;
   }, [monthTxs]);
 
+  const previousMonth = useMemo(() => shiftMonthKey(selectedMonth, -1), [selectedMonth]);
+  const rolloverByCat = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const b of monthBudgets) {
+      if (!b.rolloverEnabled) continue;
+      const previousBudget = budgets.find((x) => x.categoryId === b.categoryId && x.month === previousMonth);
+      if (!previousBudget) continue;
+      map.set(b.categoryId, Math.max(0, previousBudget.limit - spentFor(txs, b.categoryId, previousMonth)));
+    }
+    return map;
+  }, [budgets, monthBudgets, previousMonth, txs]);
+
+  const progress = useMemo(() => monthProgress(selectedMonth), [selectedMonth]);
   const totalSpent = useMemo(() => monthBudgets.reduce((sum, b) => sum + (spentByCat.get(b.categoryId) || 0), 0), [monthBudgets, spentByCat]);
   const totalBudget = useMemo(() => monthBudgets.reduce((sum, b) => sum + b.limit, 0), [monthBudgets]);
+  const totalRollover = useMemo(() => monthBudgets.reduce((sum, b) => sum + (rolloverByCat.get(b.categoryId) || 0), 0), [monthBudgets, rolloverByCat]);
+  const totalEffectiveBudget = totalBudget + totalRollover;
+  const totalProjected = useMemo(() => monthBudgets.reduce((sum, b) => sum + projectedSpend(spentByCat.get(b.categoryId) || 0, selectedMonth), 0), [monthBudgets, selectedMonth, spentByCat]);
 
   const close = () => setModal({ kind: "none" });
 
   const openAdd = (catId?: string) => {
     const b = monthBudgets.find((x) => x.categoryId === catId);
     setModal({ kind: "edit", categoryId: catId, limit: b ? String(b.limit) : "" });
+  };
+
+  const openAddScreen = () => {
+    router.push({
+      pathname: "/add-budget",
+      params: {
+        month: selectedMonth,
+        categoryId: expenseCats[0]?.id ?? "",
+      },
+    });
   };
 
   const openDetail = (b: Budget, c: Category | undefined, spent: number) => {
@@ -115,15 +177,21 @@ export default function BudgetsScreen() {
           <Text style={s.overallLabel}>MONTHLY LIMIT</Text>
           <View style={{ flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", marginTop: 4 }}>
             <Text style={s.overallSpent}>{formatMoney(totalSpent, currency)}</Text>
-            <Text style={s.overallOf}>of {formatMoney(totalBudget, currency)}</Text>
+            <Text style={s.overallOf}>of {formatMoney(totalEffectiveBudget, currency)}</Text>
           </View>
-          <BudgetBar spent={totalSpent} limit={totalBudget || 1} large colors={colors} />
-          <Text style={s.overallSub}>{totalBudget === 0 ? "Set your first budget below" : totalSpent > totalBudget ? `Over by ${formatMoney(totalSpent - totalBudget, currency)}` : `${formatMoney(Math.max(0, totalBudget - totalSpent), currency)} remaining`}</Text>
+          <BudgetBar spent={totalSpent} limit={totalEffectiveBudget || 1} large colors={colors} />
+          <Text style={s.overallSub}>{totalBudget === 0 ? "Set your first budget below" : totalSpent > totalEffectiveBudget ? `Over by ${formatMoney(totalSpent - totalEffectiveBudget, currency)}` : `${formatMoney(Math.max(0, totalEffectiveBudget - totalSpent), currency)} remaining`}</Text>
+          {totalBudget > 0 && (
+            <View style={s.overallStats}>
+              <View style={s.statPill}><Text style={s.statPillText}>Projected {formatMoney(totalProjected, currency)}</Text></View>
+              {totalRollover > 0 && <View style={s.statPill}><Text style={s.statPillText}>Rollover {formatMoney(totalRollover, currency)}</Text></View>}
+            </View>
+          )}
         </View>
 
         <View style={s.sectionRow}>
           <Text style={s.sectionTitle}>Category budgets</Text>
-          <Pressable onPress={() => openAdd(expenseCats[0]?.id)} style={s.addBtn}><Ionicons name="add" size={16} color={colors.brand} /><Text style={s.addBtnText}>Add</Text></Pressable>
+          <Pressable onPress={openAddScreen} style={s.addBtn}><Ionicons name="add" size={16} color={colors.brand} /><Text style={s.addBtnText}>Add</Text></Pressable>
         </View>
 
         {monthBudgets.length === 0 ? (
@@ -133,8 +201,15 @@ export default function BudgetsScreen() {
             {monthBudgets.map((b) => {
               const c = catMap.get(b.categoryId);
               const spent = spentByCat.get(b.categoryId) || 0;
-              const over = spent > b.limit;
-              const pct = Math.min(999, Math.round((spent / b.limit) * 100));
+              const rollover = rolloverByCat.get(b.categoryId) || 0;
+              const effectiveLimit = b.limit + rollover;
+              const over = spent > effectiveLimit;
+              const pct = Math.min(999, Math.round((spent / effectiveLimit) * 100));
+              const paceLimit = effectiveLimit * progress;
+              const paceDelta = spent - paceLimit;
+              const projected = projectedSpend(spent, selectedMonth);
+              const alertPercent = b.alertPercent || 80;
+              const alerting = !over && spent >= effectiveLimit * (alertPercent / 100);
               return (
                 <Pressable
                   key={b.id}
@@ -146,12 +221,27 @@ export default function BudgetsScreen() {
                     <CategoryIcon name={c?.icon || "ellipsis-horizontal"} color={c?.color || colors.muted} size={34} />
                     <View style={{ flex: 1, marginLeft: 10 }}>
                       <Text style={s.budgetName}>{c?.name || "Uncategorized"}</Text>
-                      <Text style={s.budgetMeta}>{formatMoney(spent, currency)} <Text style={{ color: colors.muted }}>/ {formatMoney(b.limit, currency)}</Text></Text>
+                      <Text style={s.budgetMeta}>{formatMoney(spent, currency)} <Text style={{ color: colors.muted }}>/ {formatMoney(effectiveLimit, currency)}</Text></Text>
                     </View>
                     <Pressable onPress={() => openAdd(b.categoryId)} style={s.inlineEdit}><Ionicons name="create-outline" size={14} color={colors.brand} /></Pressable>
                     <Text style={[s.budgetPct, { color: over ? colors.error : colors.brand }]}>{pct}%</Text>
                   </View>
-                  <BudgetBar spent={spent} limit={b.limit} color={c?.color} colors={colors} />
+                  <BudgetBar spent={spent} limit={effectiveLimit} color={c?.color} colors={colors} />
+                  <View style={s.budgetPaceRow}>
+                    <View style={[s.badge, { backgroundColor: (b.kind === "fixed" ? colors.info : colors.brand) + "18" }]}>
+                      <Text style={[s.badgeText, { color: b.kind === "fixed" ? colors.info : colors.brand }]}>{b.kind === "fixed" ? "Fixed" : "Flexible"}</Text>
+                    </View>
+                    <Text style={[s.paceText, { color: over || paceDelta > 0 ? colors.warning : colors.muted }]} numberOfLines={1}>
+                      {over ? `Over limit. Projected ${formatMoney(projected, currency)}` : paceDelta > 0 ? `${formatMoney(paceDelta, currency)} ahead of pace` : `${formatMoney(Math.abs(paceDelta), currency)} under pace`}
+                    </Text>
+                  </View>
+                  {(b.recurringDay || rollover > 0 || alerting) && (
+                    <View style={s.budgetInfoRow}>
+                      {b.recurringDay ? <View style={s.badge}><Text style={s.badgeText}>Due {b.recurringDay}</Text></View> : null}
+                      {rollover > 0 ? <View style={s.badge}><Text style={s.badgeText}>+{formatMoney(rollover, currency)}</Text></View> : null}
+                      {alerting ? <View style={[s.badge, { backgroundColor: colors.warning + "18" }]}><Text style={[s.badgeText, { color: colors.warning }]}>Alert {alertPercent}%</Text></View> : null}
+                    </View>
+                  )}
                 </Pressable>
               );
             })}
@@ -162,7 +252,15 @@ export default function BudgetsScreen() {
       {/* Modals */}
       <Modal transparent visible={modal.kind !== "none"} animationType="slide" onRequestClose={close}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1, backgroundColor: "transparent", justifyContent: "flex-end" }}>
-          <BlurView intensity={60} tint="default" style={StyleSheet.absoluteFill}><Pressable style={{ flex: 1 }} onPress={close} /></BlurView>
+          <BlurView
+            intensity={45}
+            tint={blurTint}
+            blurReductionFactor={2}
+            experimentalBlurMethod="dimezisBlurView"
+            style={StyleSheet.absoluteFill}
+          >
+            <Pressable style={{ flex: 1 }} onPress={close} />
+          </BlurView>
           <View style={[s.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
             <View style={s.handle} />
             {/* ── Edit/New Modal ── */}
@@ -222,6 +320,9 @@ const createStyles = (colors: any) => StyleSheet.create({
   overallSpent: { fontSize: 28, fontWeight: "800", color: colors.onSurface, letterSpacing: -0.5 },
   overallOf: { fontSize: 12, color: colors.muted, marginBottom: 4 },
   overallSub: { fontSize: 11, color: colors.muted, marginTop: 8, fontWeight: "600" },
+  overallStats: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 },
+  statPill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surfaceTertiary },
+  statPillText: { fontSize: 11, color: colors.onSurface, fontWeight: "700" },
   sectionRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginHorizontal: spacing.lg, marginTop: 24, marginBottom: 12 },
   sectionTitle: { fontSize: 16, fontWeight: "800", color: colors.onSurface },
   addBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.brandTertiary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill },
@@ -231,6 +332,11 @@ const createStyles = (colors: any) => StyleSheet.create({
   budgetMeta: { fontSize: 12, color: colors.onSurface, marginTop: 1, fontWeight: "600" },
   budgetPct: { fontSize: 13, fontWeight: "800", marginLeft: 6 },
   inlineEdit: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center", marginRight: 6 },
+  budgetPaceRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 },
+  budgetInfoRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },
+  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.pill, backgroundColor: colors.surfaceTertiary },
+  badgeText: { fontSize: 10, color: colors.muted, fontWeight: "800" },
+  paceText: { flex: 1, fontSize: 11, color: colors.muted, fontWeight: "700", textAlign: "right" },
   sheet: { backgroundColor: colors.surfaceSecondary, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, ...shadow.card, shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.15, shadowRadius: 20 },
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.borderStrong, alignSelf: "center", marginBottom: 12 },
   sheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },

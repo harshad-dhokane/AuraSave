@@ -1,4 +1,4 @@
-import React, { useCallback, useState , useMemo} from "react";
+import React, { useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -18,19 +18,22 @@ import { useFocusEffect, useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { BlurView } from "expo-blur";
 
-import { colors, radius, spacing, shadow } from "@/src/theme";
-import { getProfile, setProfile, clearAllData, seedIfNeeded, getTransactions } from "@/src/store";
+import { radius, spacing, shadow } from "@/src/theme";
+import { getProfile, setProfile, clearAllData, getTransactions } from "@/src/store";
 import { useCurrency, CURRENCIES, Currency } from "@/src/currency";
 import { useAuth } from "@/src/context/AuthContext";
 
 import { useTheme } from "@/src/theme/ThemeContext";
+
+const BLUR_INTENSITY = 45;
 
 export default function Settings() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { currency, setCurrency } = useCurrency();
   const { user, signOut } = useAuth();
-  const { mode, setMode, colors } = useTheme();
+  const { mode, setMode, colors, isDark } = useTheme();
+  const blurTint = isDark ? "systemUltraThinMaterialDark" : "systemUltraThinMaterialLight";
   
   const [name, setName] = useState("");
   const [editing, setEditing] = useState(false);
@@ -218,7 +221,13 @@ export default function Settings() {
       {/* Name modal */}
       <Modal transparent visible={editing} animationType="fade" onRequestClose={() => setEditing(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1, backgroundColor: "transparent", justifyContent: "center", padding: 24 }}>
-          <BlurView intensity={60} tint="default" style={StyleSheet.absoluteFill}>
+          <BlurView
+            intensity={BLUR_INTENSITY}
+            tint={blurTint}
+            blurReductionFactor={2}
+            experimentalBlurMethod="dimezisBlurView"
+            style={StyleSheet.absoluteFill}
+          >
             <Pressable style={{ flex: 1 }} onPress={() => setEditing(false)} />
           </BlurView>
           <View style={styles.editCard}>
@@ -252,7 +261,13 @@ export default function Settings() {
       {/* Theme Modal */}
       <Modal transparent visible={pickingTheme} animationType="fade" onRequestClose={() => setPickingTheme(false)}>
         <View style={{ flex: 1, backgroundColor: "transparent", justifyContent: "flex-end" }}>
-          <BlurView intensity={60} tint="default" style={StyleSheet.absoluteFill}>
+          <BlurView
+            intensity={BLUR_INTENSITY}
+            tint={blurTint}
+            blurReductionFactor={2}
+            experimentalBlurMethod="dimezisBlurView"
+            style={StyleSheet.absoluteFill}
+          >
             <Pressable style={{ flex: 1 }} onPress={() => setPickingTheme(false)} />
           </BlurView>
           <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
@@ -294,7 +309,13 @@ export default function Settings() {
       {/* Currency Modal */}
       <Modal transparent visible={pickingCurrency} animationType="fade" onRequestClose={() => setPickingCurrency(false)}>
         <View style={{ flex: 1, backgroundColor: "transparent", justifyContent: "flex-end" }}>
-          <BlurView intensity={60} tint="default" style={StyleSheet.absoluteFill}>
+          <BlurView
+            intensity={BLUR_INTENSITY}
+            tint={blurTint}
+            blurReductionFactor={2}
+            experimentalBlurMethod="dimezisBlurView"
+            style={StyleSheet.absoluteFill}
+          >
             <Pressable style={{ flex: 1 }} onPress={() => setPickingCurrency(false)} />
           </BlurView>
           <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>

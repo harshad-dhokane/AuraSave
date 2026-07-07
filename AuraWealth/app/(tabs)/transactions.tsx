@@ -3,16 +3,13 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   Pressable,
   TextInput,
   Alert,
   FlatList,
-  Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { BlurView } from "expo-blur";
 import { useFocusEffect, useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 
@@ -60,6 +57,7 @@ export default function TransactionsScreen() {
   const [cats, setCats] = useState<Category[]>([]);
   const [filters, setFilters] = useState<Set<string>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
+  const [filterDropdownTop, setFilterDropdownTop] = useState(0);
   const [conts, setConts] = useState<GoalContribution[]>([]);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -130,6 +128,21 @@ export default function TransactionsScreen() {
     ]);
   };
 
+  const toggleFilter = (key: string) => {
+    Haptics.selectionAsync();
+    if (key === "all") {
+      setFilters(new Set());
+      return;
+    }
+
+    setFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       {/* Sticky header */}
@@ -149,7 +162,13 @@ export default function TransactionsScreen() {
         </View>
 
         {/* Search & Filter */}
-        <View style={{ flexDirection: "row", alignItems: "center", marginTop: 0, gap: 12 }}>
+        <View
+          style={styles.searchRow}
+          onLayout={(event) => {
+            const { y, height } = event.nativeEvent.layout;
+            setFilterDropdownTop(y + height + 8);
+          }}
+        >
           <View style={[styles.search, { flex: 1 }]}>
             <Ionicons name="search" size={18} color={colors.muted} />
             <TextInput
@@ -159,6 +178,7 @@ export default function TransactionsScreen() {
               placeholder="Search category or note"
               placeholderTextColor={colors.muted}
               style={styles.searchInput}
+              onFocus={() => setShowFilters(false)}
             />
             {q.length > 0 && (
               <Pressable onPress={() => setQ("")}>
@@ -167,66 +187,67 @@ export default function TransactionsScreen() {
             )}
           </View>
           <Pressable 
-            onPress={() => setShowFilters(true)} 
-            style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: colors.surfaceSecondary, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border }}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setShowFilters((visible) => !visible);
+            }}
+            style={[styles.filterButton, showFilters && styles.filterButtonActive]}
           >
             <Ionicons name="filter" size={20} color={filters.size > 0 ? colors.brand : colors.onSurface} />
             {filters.size > 0 && (
-              <View style={{ position: "absolute", top: -4, right: -4, backgroundColor: colors.brand, width: 16, height: 16, borderRadius: 8, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.surface }}>
-                <Text style={{ color: "#fff", fontSize: 9, fontWeight: "800" }}>{filters.size}</Text>
+              <View style={styles.filterBadge}>
+                <Text style={styles.filterBadgeText}>{filters.size}</Text>
               </View>
             )}
           </Pressable>
         </View>
 
-      </View>
-
-      {/* Filter Modal */}
-      <Modal visible={showFilters} transparent animationType="fade" onRequestClose={() => setShowFilters(false)}>
-        <View style={{ flex: 1, justifyContent: "flex-end" }}>
-          <BlurView intensity={60} tint="default" style={StyleSheet.absoluteFill}><Pressable style={{ flex: 1 }} onPress={() => setShowFilters(false)} /></BlurView>
-          <Pressable style={{ backgroundColor: colors.surface, padding: 24, borderTopLeftRadius: 24, borderTopRightRadius: 24 }} onPress={(e) => e.stopPropagation()}>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-              <Text style={{ fontSize: 18, fontWeight: "800", color: colors.onSurface }}>Filters</Text>
-              <Pressable onPress={() => { setFilters(new Set()); Haptics.selectionAsync(); }}>
-                <Text style={{ color: colors.brand, fontWeight: "600" }}>Clear All</Text>
-              </Pressable>
+        {showFilters && (
+          <View style={[styles.filterDropdown, { top: filterDropdownTop || 50 }]}>
+            <View style={styles.dropdownHeader}>
+              <Text style={styles.dropdownTitle}>Filter by type</Text>
+              {filters.size > 0 && (
+                <Pressable onPress={() => toggleFilter("all")} hitSlop={8}>
+                  <Text style={styles.dropdownClear}>Clear</Text>
+                </Pressable>
+              )}
             </View>
-            {FILTERS.filter(f => f.key !== "all").map(f => {
-              const isActive = filters.has(f.key);
+
+            {FILTERS.map((f, index) => {
+              const isActive = f.key === "all" ? filters.size === 0 : filters.has(f.key);
               return (
                 <Pressable 
                   key={f.key}
-                  onPress={() => {
-                    Haptics.selectionAsync();
-                    setFilters(prev => {
-                      const n = new Set(prev);
-                      if (n.has(f.key)) n.delete(f.key);
-                      else n.add(f.key);
-                      return n;
-                    });
-                  }}
-                  style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                  onPress={() => toggleFilter(f.key)}
+                  style={[
+                    styles.dropdownItem,
+                    index !== FILTERS.length - 1 && styles.dropdownItemBorder,
+                    isActive && styles.dropdownItemActive,
+                  ]}
                 >
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                    <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surfaceSecondary, alignItems: "center", justifyContent: "center" }}>
+                  <View style={styles.dropdownItemLeft}>
+                    <View style={[styles.dropdownIcon, isActive && styles.dropdownIconActive]}>
                       <Ionicons name={f.icon as any} size={18} color={isActive ? colors.brand : colors.muted} />
                     </View>
-                    <Text style={{ fontSize: 16, fontWeight: "600", color: isActive ? colors.onSurface : colors.muted }}>{f.label}</Text>
+                    <Text style={[styles.dropdownItemText, isActive && styles.dropdownItemTextActive]}>{f.label}</Text>
                   </View>
-                  <Ionicons name={isActive ? "checkbox" : "square-outline"} size={24} color={isActive ? colors.brand : colors.muted} />
+                  <Ionicons name={isActive ? "checkmark-circle" : "ellipse-outline"} size={20} color={isActive ? colors.brand : colors.muted} />
                 </Pressable>
               );
             })}
-            <Pressable 
+
+            <Pressable
               onPress={() => setShowFilters(false)}
-              style={{ marginTop: 24, backgroundColor: colors.onSurface, padding: 16, borderRadius: 12, alignItems: "center" }}
+              style={styles.dropdownDone}
             >
-              <Text style={{ color: colors.surface, fontWeight: "700", fontSize: 16 }}>Apply Filters</Text>
+              <Text style={styles.dropdownDoneText}>Done</Text>
             </Pressable>
-          </Pressable>
-        </View>
-      </Modal>
+          </View>
+        )}
+
+      </View>
+
+      {showFilters && <Pressable style={styles.dropdownDismissLayer} onPress={() => setShowFilters(false)} />}
 
       {grouped.length === 0 ? (
         <View style={{ marginTop: 60 }}>
@@ -243,6 +264,7 @@ export default function TransactionsScreen() {
           keyExtractor={(g) => g.label}
           contentContainerStyle={{ paddingBottom: 140, paddingHorizontal: spacing.lg }}
           onScroll={onScroll}
+          onScrollBeginDrag={() => setShowFilters(false)}
           scrollEventThrottle={16}
           renderItem={({ item }) => (
             <View>
@@ -294,6 +316,9 @@ const createStyles = (colors: any) => StyleSheet.create({
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.lg,
     paddingBottom: 4,
+    position: "relative",
+    zIndex: 3,
+    elevation: 3,
   },
   headerRow: {
     flexDirection: "row",
@@ -320,6 +345,12 @@ const createStyles = (colors: any) => StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  searchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 0,
+    gap: 12,
+  },
   search: {
     flexDirection: "row",
     alignItems: "center",
@@ -333,6 +364,127 @@ const createStyles = (colors: any) => StyleSheet.create({
     flex: 1,
     fontSize: 14,
     color: colors.onSurface,
+  },
+  filterButton: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSecondary,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  filterButtonActive: {
+    borderColor: colors.brand,
+    backgroundColor: colors.brandTertiary,
+  },
+  filterBadge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    backgroundColor: colors.brand,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: colors.surface,
+  },
+  filterBadgeText: {
+    color: colors.onBrandPrimary,
+    fontSize: 9,
+    fontWeight: "800",
+  },
+  filterDropdown: {
+    position: "absolute",
+    right: spacing.lg,
+    width: 284,
+    maxWidth: "100%",
+    padding: 8,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.card,
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+    elevation: 12,
+    zIndex: 5,
+  },
+  dropdownHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  dropdownTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: colors.onSurface,
+  },
+  dropdownClear: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.brand,
+  },
+  dropdownItem: {
+    minHeight: 42,
+    borderRadius: radius.sm,
+    paddingHorizontal: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  dropdownItemActive: {
+    backgroundColor: colors.brandTertiary,
+  },
+  dropdownItemBorder: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.divider,
+  },
+  dropdownItemLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  dropdownIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: colors.surfaceTertiary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dropdownIconActive: {
+    backgroundColor: colors.surfaceSecondary,
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.muted,
+  },
+  dropdownItemTextActive: {
+    color: colors.onSurface,
+  },
+  dropdownDone: {
+    height: 40,
+    borderRadius: radius.sm,
+    backgroundColor: colors.brand,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 8,
+  },
+  dropdownDoneText: {
+    color: colors.onBrandPrimary,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  dropdownDismissLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1,
   },
   filterRow: {
     gap: 8,

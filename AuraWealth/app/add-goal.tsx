@@ -13,6 +13,21 @@ import { addGoal } from "@/src/store";
 import { useTheme } from "@/src/theme/ThemeContext";
 
 const PERIODS = ["3 months", "6 months", "1 year", "5 years"];
+const PRIORITIES: { value: "low" | "medium" | "high"; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { value: "low", label: "Low", icon: "remove-circle-outline" },
+  { value: "medium", label: "Medium", icon: "radio-button-on-outline" },
+  { value: "high", label: "High", icon: "alert-circle-outline" },
+];
+
+function deadlineForPeriod(period: string) {
+  const date = new Date();
+  if (period === "3 months") date.setMonth(date.getMonth() + 3);
+  else if (period === "6 months") date.setMonth(date.getMonth() + 6);
+  else if (period === "1 year") date.setFullYear(date.getFullYear() + 1);
+  else if (period === "5 years") date.setFullYear(date.getFullYear() + 5);
+  else return undefined;
+  return date.toISOString();
+}
 
 export default function AddGoalScreen() {
   const { colors } = useTheme();
@@ -26,6 +41,9 @@ export default function AddGoalScreen() {
   const [target, setTarget] = useState("");
   const [saved, setSaved] = useState("");
   const [period, setPeriod] = useState(PERIODS[2]);
+  const [priority, setPriority] = useState<"low" | "medium" | "high">("medium");
+  const [autoContribution, setAutoContribution] = useState("");
+  const [autoDay, setAutoDay] = useState("1");
 
   const isValid = title.trim().length > 0 && Number(target) > 0;
 
@@ -42,6 +60,10 @@ export default function AddGoalScreen() {
       saved: s,
       status: s >= t ? "completed" : "pending",
       period,
+      deadline: deadlineForPeriod(period),
+      priority,
+      autoContributionAmount: Number(autoContribution) || undefined,
+      autoContributionDay: autoContribution ? Math.min(31, Math.max(1, Number(autoDay) || 1)) : undefined,
     });
     
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -96,16 +118,53 @@ export default function AddGoalScreen() {
           </View>
 
           <Text style={[s.label, { marginTop: 24 }]}>Target Period</Text>
-          <View style={s.chipRow}>
+          <View style={s.periodRow}>
             {PERIODS.map((p) => (
               <Pressable
                 key={p}
                 onPress={() => setPeriod(p)}
-                style={[s.chip, period === p && s.chipAct]}
+                style={[s.periodChip, period === p && s.periodChipAct]}
               >
-                <Text style={[s.chipText, period === p && s.chipTextAct]}>{p}</Text>
+                <Text style={[s.periodText, period === p && s.periodTextAct]}>{p}</Text>
               </Pressable>
             ))}
+          </View>
+
+          <Text style={[s.label, { marginTop: 24 }]}>Priority</Text>
+          <View style={s.priorityRow}>
+            {PRIORITIES.map((p) => {
+              const active = priority === p.value;
+              return (
+                <Pressable key={p.value} onPress={() => setPriority(p.value)} style={[s.priorityChip, active && s.priorityChipAct]}>
+                  <Ionicons name={p.icon} size={15} color={active ? colors.brand : colors.muted} />
+                  <Text style={[s.priorityText, active && s.priorityTextAct]}>{p.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text style={[s.label, { marginTop: 24 }]}>Auto contribution plan</Text>
+          <View style={{ flexDirection: "row", gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <TextInput
+                value={autoContribution}
+                onChangeText={(v) => setAutoContribution(v.replace(/[^0-9]/g, ""))}
+                placeholder={`Monthly (${currency.symbol})`}
+                placeholderTextColor={colors.muted}
+                keyboardType="numeric"
+                style={s.input}
+              />
+            </View>
+            <View style={{ width: 92 }}>
+              <TextInput
+                value={autoDay}
+                onChangeText={(v) => setAutoDay(v.replace(/[^0-9]/g, "").slice(0, 2))}
+                placeholder="Day"
+                placeholderTextColor={colors.muted}
+                keyboardType="numeric"
+                style={s.input}
+              />
+            </View>
           </View>
           
         </ScrollView>
@@ -136,11 +195,27 @@ const createStyles = (colors: any) => StyleSheet.create({
   label: { fontSize: 11, color: colors.muted, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: "700", marginBottom: 8 },
   input: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: 16, fontSize: 16, color: colors.onSurface, backgroundColor: colors.surface, fontWeight: "600" },
   
-  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  chip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: radius.pill, backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: "transparent" },
-  chipAct: { backgroundColor: colors.brandTertiary, borderColor: colors.brand },
-  chipText: { fontSize: 14, fontWeight: "600", color: colors.muted },
-  chipTextAct: { color: colors.brand, fontWeight: "800" },
+  periodRow: { flexDirection: "row", gap: 6 },
+  periodChip: {
+    flex: 1,
+    minWidth: 0,
+    height: 32,
+    paddingHorizontal: 4,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceTertiary,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  periodChipAct: { backgroundColor: colors.brandTertiary, borderColor: colors.brand },
+  periodText: { fontSize: 11, fontWeight: "700", color: colors.muted },
+  periodTextAct: { color: colors.brand, fontWeight: "800" },
+  priorityRow: { flexDirection: "row", gap: 8 },
+  priorityChip: { flex: 1, height: 38, borderRadius: radius.pill, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.border },
+  priorityChipAct: { backgroundColor: colors.brandTertiary, borderColor: colors.brand },
+  priorityText: { fontSize: 12, color: colors.muted, fontWeight: "700" },
+  priorityTextAct: { color: colors.brand, fontWeight: "800" },
 
   footer: { position: "absolute", bottom: 0, left: 0, right: 0, paddingHorizontal: spacing.lg, paddingTop: 16, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border },
   saveBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: colors.brand, height: 56, borderRadius: radius.pill },

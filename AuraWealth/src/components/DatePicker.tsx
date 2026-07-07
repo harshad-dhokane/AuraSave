@@ -4,10 +4,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Calendar } from "react-native-calendars";
 import { BlurView } from "expo-blur";
-import { colors, radius, spacing, shadow } from "@/src/theme";
+import { radius, spacing, shadow, type ThemeColors } from "@/src/theme";
+import { useTheme } from "@/src/theme/ThemeContext";
 
 const { height: SCREEN_H } = Dimensions.get("window");
 const MAX_SHEET = Math.round(SCREEN_H * 0.75);
+const BLUR_INTENSITY = 45;
 
 function ymd(d: Date): string {
   const y = d.getFullYear();
@@ -16,24 +18,26 @@ function ymd(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-const calTheme = {
-  backgroundColor: colors.surfaceSecondary,
-  calendarBackground: colors.surfaceSecondary,
-  textSectionTitleColor: colors.muted,
-  dayTextColor: colors.onSurface,
-  monthTextColor: colors.onSurface,
-  todayTextColor: colors.brand,
-  selectedDayBackgroundColor: colors.brand,
-  selectedDayTextColor: "#ffffff",
-  arrowColor: colors.brand,
-  textDisabledColor: colors.borderStrong,
-  textDayFontWeight: "600" as const,
-  textMonthFontWeight: "800" as const,
-  textDayHeaderFontWeight: "700" as const,
-  textDayFontSize: 14,
-  textMonthFontSize: 15,
-  textDayHeaderFontSize: 11,
-};
+function createCalendarTheme(colors: ThemeColors) {
+  return {
+    backgroundColor: colors.surfaceSecondary,
+    calendarBackground: colors.surfaceSecondary,
+    textSectionTitleColor: colors.muted,
+    dayTextColor: colors.onSurface,
+    monthTextColor: colors.onSurface,
+    todayTextColor: colors.brandPrimary,
+    selectedDayBackgroundColor: colors.brand,
+    selectedDayTextColor: colors.onBrandPrimary,
+    arrowColor: colors.brandPrimary,
+    textDisabledColor: colors.borderStrong,
+    textDayFontWeight: "600" as const,
+    textMonthFontWeight: "800" as const,
+    textDayHeaderFontWeight: "700" as const,
+    textDayFontSize: 14,
+    textMonthFontSize: 15,
+    textDayHeaderFontSize: 11,
+  };
+}
 
 // ── Single date picker ──────────────────────────────────────────────────────
 export function DatePickerModal({
@@ -55,10 +59,21 @@ export function DatePickerModal({
 }) {
   const selected = ymd(value);
   const insets = useSafeAreaInsets();
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const calTheme = useMemo(() => createCalendarTheme(colors), [colors]);
+  const blurTint = isDark ? "systemUltraThinMaterialDark" : "systemUltraThinMaterialLight";
+
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <BlurView intensity={60} tint="default" style={StyleSheet.absoluteFill}>
+        <BlurView
+          intensity={BLUR_INTENSITY}
+          tint={blurTint}
+          blurReductionFactor={2}
+          experimentalBlurMethod="dimezisBlurView"
+          style={StyleSheet.absoluteFill}
+        >
           <Pressable style={{ flex: 1 }} onPress={onClose} />
         </BlurView>
         <View style={[styles.sheet, { maxHeight: MAX_SHEET, paddingBottom: Math.max(insets.bottom, 24) }]}>
@@ -80,6 +95,7 @@ export function DatePickerModal({
             maxDate={maxDate ? ymd(maxDate) : undefined}
             minDate={minDate ? ymd(minDate) : undefined}
             theme={calTheme}
+            style={styles.calendar}
             enableSwipeMonths
           />
         </View>
@@ -109,6 +125,10 @@ export function RangePickerModal({
   const [tempFrom, setTempFrom] = useState(ymd(from));
   const [tempTo, setTempTo] = useState(ymd(to));
   const [selectingEnd, setSelectingEnd] = useState(false);
+  const { colors, isDark } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const calTheme = useMemo(() => createCalendarTheme(colors), [colors]);
+  const blurTint = isDark ? "systemUltraThinMaterialDark" : "systemUltraThinMaterialLight";
 
   // Reset when reopened
   React.useEffect(() => {
@@ -134,13 +154,13 @@ export function RangePickerModal({
         textColor: colors.brand,
       };
       if (key === tempFrom)
-        dates[key] = { startingDay: true, color: colors.brand, textColor: "#fff" };
+        dates[key] = { startingDay: true, color: colors.brand, textColor: colors.onBrandPrimary };
       if (key === tempTo)
-        dates[key] = { ...(dates[key] || {}), endingDay: true, color: colors.brand, textColor: "#fff" };
+        dates[key] = { ...(dates[key] || {}), endingDay: true, color: colors.brand, textColor: colors.onBrandPrimary };
       if (key === ymd(end)) break;
     }
     return dates;
-  }, [tempFrom, tempTo]);
+  }, [colors, tempFrom, tempTo]);
 
   const apply = () => {
     onChange(new Date(tempFrom), new Date(tempTo));
@@ -151,7 +171,13 @@ export function RangePickerModal({
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <BlurView intensity={60} tint="default" style={StyleSheet.absoluteFill}>
+        <BlurView
+          intensity={BLUR_INTENSITY}
+          tint={blurTint}
+          blurReductionFactor={2}
+          experimentalBlurMethod="dimezisBlurView"
+          style={StyleSheet.absoluteFill}
+        >
           <Pressable style={{ flex: 1 }} onPress={onClose} />
         </BlurView>
         <View style={[styles.sheet, { maxHeight: MAX_SHEET, paddingBottom: Math.max(insets.bottom, 24) }]}>
@@ -200,6 +226,7 @@ export function RangePickerModal({
             markedDates={marked}
             maxDate={maxDate ? ymd(maxDate) : undefined}
             theme={calTheme}
+            style={styles.calendar}
             enableSwipeMonths
           />
 
@@ -217,77 +244,82 @@ export function RangePickerModal({
   );
 }
 
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: "transparent",
-    justifyContent: "flex-end",
-  },
-  sheet: {
-    backgroundColor: colors.surfaceSecondary,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: spacing.lg,
-    paddingTop: 10,
-    ...shadow.card,
-    shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-  },
-  sheetHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.borderStrong,
-    alignSelf: "center",
-    marginBottom: 12,
-  },
-  sheetHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  sheetTitle: { fontSize: 17, fontWeight: "800", color: colors.onSurface },
-  closeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.surfaceTertiary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  rangeInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 10,
-  },
-  rangeChip: {
-    flex: 1,
-    padding: 10,
-    backgroundColor: colors.brandTertiary,
-    borderRadius: radius.md,
-  },
-  rangeLabel: {
-    fontSize: 10,
-    color: colors.brand,
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
-    fontWeight: "700",
-  },
-  rangeValue: { fontSize: 13, color: colors.onSurface, fontWeight: "800", marginTop: 2 },
-  helpText: { fontSize: 11, color: colors.muted, textAlign: "center", marginBottom: 4 },
-  actionRow: { flexDirection: "row", gap: 10, marginTop: 16 },
-  actionBtn: {
-    flex: 1,
-    height: 48,
-    borderRadius: radius.pill,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  actionGhost: { backgroundColor: colors.surfaceTertiary },
-  actionGhostText: { color: colors.onSurface, fontWeight: "700" },
-  actionPrimary: { backgroundColor: colors.brand },
-  actionPrimaryText: { color: "#fff", fontWeight: "800" },
-});
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    overlay: {
+      flex: 1,
+      backgroundColor: "transparent",
+      justifyContent: "flex-end",
+    },
+    sheet: {
+      backgroundColor: colors.surfaceSecondary,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      paddingHorizontal: spacing.lg,
+      paddingTop: 10,
+      ...shadow.card,
+      shadowOffset: { width: 0, height: -6 },
+      shadowOpacity: 0.15,
+      shadowRadius: 20,
+    },
+    sheetHandle: {
+      width: 40,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: colors.borderStrong,
+      alignSelf: "center",
+      marginBottom: 12,
+    },
+    sheetHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 12,
+    },
+    sheetTitle: { fontSize: 17, fontWeight: "800", color: colors.onSurface },
+    calendar: {
+      backgroundColor: colors.surfaceSecondary,
+    },
+    closeBtn: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: colors.surfaceTertiary,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    rangeInfo: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      marginBottom: 10,
+    },
+    rangeChip: {
+      flex: 1,
+      padding: 10,
+      backgroundColor: colors.brandTertiary,
+      borderRadius: radius.md,
+    },
+    rangeLabel: {
+      fontSize: 10,
+      color: colors.brand,
+      textTransform: "uppercase",
+      letterSpacing: 0.4,
+      fontWeight: "700",
+    },
+    rangeValue: { fontSize: 13, color: colors.onSurface, fontWeight: "800", marginTop: 2 },
+    helpText: { fontSize: 11, color: colors.muted, textAlign: "center", marginBottom: 4 },
+    actionRow: { flexDirection: "row", gap: 10, marginTop: 16 },
+    actionBtn: {
+      flex: 1,
+      height: 48,
+      borderRadius: radius.pill,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    actionGhost: { backgroundColor: colors.surfaceTertiary },
+    actionGhostText: { color: colors.onSurface, fontWeight: "700" },
+    actionPrimary: { backgroundColor: colors.brand },
+    actionPrimaryText: { color: colors.onBrandPrimary, fontWeight: "800" },
+  });
+}
