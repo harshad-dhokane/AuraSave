@@ -176,11 +176,11 @@ export default function Home() {
           onPress={() => router.push("/add-transaction?type=investment")}
         />
         <QuickAction
-          testID="qa-scan-sms"
-          icon="scan"
-          label="Scan SMS"
+          testID="qa-goals"
+          icon="flag"
+          label="Goals"
           color={colors.warning}
-          onPress={() => router.push("/add-transaction?mode=sms")}
+          onPress={() => router.push("/goals")}
         />
       </View>
 

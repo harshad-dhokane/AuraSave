@@ -1,0 +1,33 @@
+{
+  "summary": "Iteration 4 frontend verification for Aura Wealth (Expo). All three feature changes and both iteration-3 bug fixes are verified working. Regressions A-E all pass.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "verification_details": {
+    "FIX_1_scan_sms_removed_from_home": "PASS. Home quick-actions row contains only qa-add-expense, qa-add-income, qa-add-invest, qa-goals. testID qa-scan-sms is NOT present on Home.",
+    "FIX_2_horizontal_category_scroll": "PASS. Category selector in Add Transaction sheet is a horizontal ScrollView. All 10 expense chips (cat-cat-food ... cat-cat-other) render on the same row (y=605 for all). Chips extend beyond viewport width (right edge > 390px) so user must scroll sideways.",
+    "FIX_3_add_transaction_bottom_sheet": "PASS. Add Transaction opens as a transparentModal with slide_from_bottom. Sheet sits at bottom of viewport (bottom=844=vh), top=239, height=605, rounded top corners (24px), semi-transparent dark backdrop (rgba(0,0,0,0.4)) with sheet-backdrop testID dismissing on tap. close-btn also dismisses. Note: actual rendered height ~72% of viewport (content-driven; maxHeight cap is 88%).",
+    "FIX_3b_datepicker_and_rangepicker_bottom_sheets": "PASS. Insights range-picker-btn opens RangePickerModal anchored at the bottom (top=250, bottom=844, height=594) with rangepicker-close/range-apply/range-cancel testIDs. DatePicker component used in Add Transaction and Export also renders as bottom sheet (same pattern).",
+    "REGRESSION_A_partial_match_banner": "PASS. For 'Rs 500 debited from A/c XX' the banner reads 'Partial match — please fill in category' (uses missing array). Colour is warning-orange, not success-green.",
+    "REGRESSION_B_save_disabled_until_category_picked": "PASS. After parsing an unknown-category SMS, save-tx-btn has aria-disabled=true and opacity=0.5. Category label displays '· required' in red. Tapping any cat-* chip flips opacity to 1 and enables save.",
+    "REGRESSION_C_full_detection": "PASS. Sample-0 ('Rs. 620 debited to ZOMATO') → banner 'SMS detected — please confirm the details' (green), cat-cat-food auto-selected, save-tx-btn enabled (opacity=1).",
+    "REGRESSION_D_manual_save_via_sheet": "PASS. FAB opens sheet → Manual mode, amount=100, Today date, first cat chip, Save → returned to Home, new transaction appears in Recent activity as 'Food & Dining · Today · -₹100'.",
+    "REGRESSION_E_previous_flows": "PASS. tab-index / tab-transactions / tab-analytics / tab-budgets all present. Insights range picker opens correctly with all controls. Budgets add-budget-btn → budget-save-btn works. Settings currency-row → cur-USD updates Home amounts to '$' (verified). Settings export-btn → Export screen shows range-picker-btn and do-export-btn (Download CSV)."
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Non-blocking console warnings: 'shadow*' style props deprecated (use boxShadow) and 'props.pointerEvents deprecated (use style.pointerEvents)'. React Native web-only warnings, do not affect native. Consider migrating in a future iteration.",
+    "Sheet renders at ~72% of viewport (content-driven), not a fixed 85-88%. Since spec says 85-88% MAX and requires the tab bar to be visible behind, current behaviour meets the intent (sheet is at bottom, backdrop visible above, rounded corners). If a strictly fixed height is desired, replace maxHeight with height on styles.sheet."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (not requested)", "frontend": "100%"},
+  "seed_data_creation": "None. Existing seeded data was used.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All iteration-4 requirements verified via mobile viewport (390x844) against public preview URL. testIDs used: home-scroll, qa-add-expense/income/invest/goals, fab-add-transaction, sheet-backdrop, close-btn, mode-manual, mode-sms, sms-textarea, detect-btn, sample-0, type-expense/income/investment, amount-input, date-picker-btn, cat-cat-<id>, note-input, save-tx-btn, tab-index/transactions/analytics/budgets, range-picker-btn, rangepicker-close, range-apply, range-cancel, add-budget-btn, budget-save-btn, header-settings-btn, currency-row, cur-USD/INR, export-btn, do-export-btn."
+}

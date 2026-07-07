@@ -50,7 +50,11 @@ export default function RootLayout() {
               <Stack.Screen name="(tabs)" />
               <Stack.Screen
                 name="add-transaction"
-                options={{ presentation: "modal", animation: "slide_from_bottom" }}
+                options={{
+                  presentation: "transparentModal",
+                  animation: "slide_from_bottom",
+                  contentStyle: { backgroundColor: "transparent" },
+                }}
               />
               <Stack.Screen
                 name="settings"

@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Keyboard,
+  Dimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -21,6 +22,8 @@ import { useCurrency } from "@/src/currency";
 import { parseSms, SMS_SAMPLES } from "@/src/utils/sms-parser";
 import { DatePickerModal } from "@/src/components/DatePicker";
 
+const { height: SCREEN_H } = Dimensions.get("window");
+
 const TYPE_OPTIONS: { key: TxType; label: string; color: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: "expense", label: "Expense", color: colors.error, icon: "arrow-up-circle" },
   { key: "income", label: "Income", color: colors.success, icon: "arrow-down-circle" },
@@ -31,10 +34,7 @@ export default function AddTransaction() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { currency } = useCurrency();
-  const params = useLocalSearchParams<{
-    type?: string;
-    mode?: string;
-  }>();
+  const params = useLocalSearchParams<{ type?: string; mode?: string }>();
 
   const [mode, setMode] = useState<"manual" | "sms">(params.mode === "sms" ? "sms" : "manual");
   const [smsText, setSmsText] = useState("");
@@ -47,6 +47,10 @@ export default function AddTransaction() {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  // When true, the type-change effect will NOT auto-pick a category. Set after
+  // an SMS parse that failed to detect a category so the user is forced to
+  // choose one explicitly.
+  const [mustChooseCategory, setMustChooseCategory] = useState(false);
   const [cats, setCats] = useState<Category[]>([]);
   const [date, setDate] = useState(new Date());
   const [pickingDate, setPickingDate] = useState(false);
@@ -60,6 +64,7 @@ export default function AddTransaction() {
   }, []);
 
   useEffect(() => {
+    if (mustChooseCategory) return; // gate auto-fallback while user must choose
     if (categoryId) {
       const found = cats.find((c) => c.id === categoryId);
       if (found && found.type === type) return;
@@ -67,7 +72,7 @@ export default function AddTransaction() {
     const first = cats.find((c) => c.type === type);
     setCategoryId(first ? first.id : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, cats]);
+  }, [type, cats, mustChooseCategory]);
 
   const filtered = useMemo(() => cats.filter((c) => c.type === type), [cats, type]);
   const typeMeta = TYPE_OPTIONS.find((t) => t.key === type)!;
@@ -81,15 +86,27 @@ export default function AddTransaction() {
     const parsed = parseSms(smsText, cats);
     if (parsed.type) setType(parsed.type);
     if (parsed.amount) setAmount(String(parsed.amount));
-    if (parsed.suggestedCategoryId) setCategoryId(parsed.suggestedCategoryId);
     if (parsed.merchant && !note) setNote(parsed.merchant);
+
     const missing: string[] = [];
     if (!parsed.amount) missing.push("amount");
-    if (!parsed.suggestedCategoryId) missing.push("category");
+    if (parsed.suggestedCategoryId) {
+      setCategoryId(parsed.suggestedCategoryId);
+      setMustChooseCategory(false);
+    } else {
+      setCategoryId(null);
+      setMustChooseCategory(true);
+      missing.push("category");
+    }
     setSmsBanner({ confidence: parsed.confidence, missing });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    // Switch to manual mode with prefilled values so user can review/edit
     setMode("manual");
+  };
+
+  const selectCategory = (id: string) => {
+    Haptics.selectionAsync();
+    setCategoryId(id);
+    setMustChooseCategory(false);
   };
 
   const handleSave = async () => {
@@ -123,279 +140,293 @@ export default function AddTransaction() {
     return date.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "long", year: "numeric" });
   }, [date]);
 
+  const sheetHeight = Math.round(SCREEN_H * 0.88);
+
+  // Banner colour + text: use `missing` for accurate copy
+  const bannerText = smsBanner
+    ? smsBanner.missing.length === 0
+      ? "SMS detected — please confirm the details"
+      : `Partial match — please fill in ${smsBanner.missing.join(" and ")}`
+    : null;
+  const bannerColor = smsBanner
+    ? smsBanner.missing.length === 0
+      ? colors.success
+      : colors.warning
+    : colors.info;
+
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={{ flex: 1, backgroundColor: colors.surface }}
-    >
-      <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
-        <Pressable testID="close-btn" onPress={() => router.back()} style={styles.headerBtn}>
-          <Ionicons name="close" size={22} color={colors.onSurface} />
-        </Pressable>
-        <Text style={styles.headerTitle}>New transaction</Text>
-        <View style={{ width: 40 }} />
-      </View>
-
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: 40 }}
-        showsVerticalScrollIndicator={false}
+    <View style={styles.overlay}>
+      <Pressable
+        testID="sheet-backdrop"
+        style={StyleSheet.absoluteFill}
+        onPress={() => router.back()}
+      />
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ maxHeight: sheetHeight }}
       >
-        {/* Mode toggle: Manual | Scan SMS */}
-        <View style={styles.modeSwitch}>
-          <Pressable
-            testID="mode-manual"
-            onPress={() => {
-              Haptics.selectionAsync();
-              setMode("manual");
-            }}
-            style={[styles.modeBtn, mode === "manual" && styles.modeBtnActive]}
-          >
-            <Ionicons name="create-outline" size={14} color={mode === "manual" ? "#fff" : colors.muted} />
-            <Text style={[styles.modeText, mode === "manual" && styles.modeTextActive]}>Manual</Text>
-          </Pressable>
-          <Pressable
-            testID="mode-sms"
-            onPress={() => {
-              Haptics.selectionAsync();
-              setMode("sms");
-            }}
-            style={[styles.modeBtn, mode === "sms" && styles.modeBtnActive]}
-          >
-            <Ionicons name="scan-outline" size={14} color={mode === "sms" ? "#fff" : colors.muted} />
-            <Text style={[styles.modeText, mode === "sms" && styles.modeTextActive]}>Scan SMS</Text>
-          </Pressable>
-        </View>
+        <View style={[styles.sheet, { maxHeight: sheetHeight }]}>
+          {/* Drag handle */}
+          <View style={styles.handle} />
 
-        {mode === "sms" ? (
-          <View style={{ paddingHorizontal: spacing.lg }}>
-            <View style={styles.smsHero}>
-              <View style={styles.smsHeroIcon}>
-                <Ionicons name="scan" size={20} color={colors.brand} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.smsTitle}>Paste any bank / UPI SMS</Text>
-                <Text style={styles.smsSub}>We&apos;ll auto-detect the type, amount, category and merchant offline.</Text>
-              </View>
-            </View>
-
-            <TextInput
-              testID="sms-textarea"
-              value={smsText}
-              onChangeText={setSmsText}
-              placeholder="Paste your bank message here…"
-              placeholderTextColor={colors.muted}
-              style={styles.textarea}
-              multiline
-              autoFocus
-            />
-
-            <Pressable
-              testID="detect-btn"
-              onPress={detectSms}
-              disabled={!smsText.trim()}
-              style={({ pressed }) => [
-                styles.detectBtn,
-                { opacity: !smsText.trim() ? 0.5 : pressed ? 0.9 : 1 },
-              ]}
-            >
-              <Ionicons name="sparkles" size={16} color="#fff" />
-              <Text style={styles.detectBtnText}>Detect & prefill</Text>
+          {/* Header */}
+          <View style={styles.header}>
+            <Pressable testID="close-btn" onPress={() => router.back()} style={styles.headerBtn}>
+              <Ionicons name="close" size={20} color={colors.onSurface} />
             </Pressable>
-
-            <Text style={styles.samplesLabel}>Try a sample</Text>
-            {SMS_SAMPLES.map((s, i) => (
-              <Pressable
-                key={i}
-                testID={`sample-${i}`}
-                onPress={() => {
-                  Haptics.selectionAsync();
-                  setSmsText(s);
-                }}
-                style={styles.sampleCard}
-              >
-                <Ionicons name="chatbox-ellipses-outline" size={14} color={colors.brand} />
-                <Text style={styles.sampleText} numberOfLines={2}>
-                  {s}
-                </Text>
-              </Pressable>
-            ))}
+            <Text style={styles.headerTitle}>New transaction</Text>
+            <View style={{ width: 36 }} />
           </View>
-        ) : (
-          <>
-            {/* Confidence banner after SMS detection */}
-            {smsBanner && (
-              <View
-                style={[
-                  styles.banner,
+
+          {/* Mode toggle */}
+          <View style={styles.modeSwitch}>
+            <Pressable
+              testID="mode-manual"
+              onPress={() => {
+                Haptics.selectionAsync();
+                setMode("manual");
+              }}
+              style={[styles.modeBtn, mode === "manual" && styles.modeBtnActive]}
+            >
+              <Ionicons name="create-outline" size={14} color={mode === "manual" ? "#fff" : colors.muted} />
+              <Text style={[styles.modeText, mode === "manual" && styles.modeTextActive]}>Manual</Text>
+            </Pressable>
+            <Pressable
+              testID="mode-sms"
+              onPress={() => {
+                Haptics.selectionAsync();
+                setMode("sms");
+              }}
+              style={[styles.modeBtn, mode === "sms" && styles.modeBtnActive]}
+            >
+              <Ionicons name="scan-outline" size={14} color={mode === "sms" ? "#fff" : colors.muted} />
+              <Text style={[styles.modeText, mode === "sms" && styles.modeTextActive]}>Scan SMS</Text>
+            </Pressable>
+          </View>
+
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingBottom: 24 }}
+            showsVerticalScrollIndicator={false}
+          >
+            {mode === "sms" ? (
+              <View style={{ paddingHorizontal: spacing.lg }}>
+                <View style={styles.smsHero}>
+                  <View style={styles.smsHeroIcon}>
+                    <Ionicons name="scan" size={18} color={colors.brand} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.smsTitle}>Paste any bank / UPI SMS</Text>
+                    <Text style={styles.smsSub}>We&apos;ll auto-detect the type, amount, category and merchant.</Text>
+                  </View>
+                </View>
+
+                <TextInput
+                  testID="sms-textarea"
+                  value={smsText}
+                  onChangeText={setSmsText}
+                  placeholder="Paste your bank message here…"
+                  placeholderTextColor={colors.muted}
+                  style={styles.textarea}
+                  multiline
+                  autoFocus
+                />
+
+                <Pressable
+                  testID="detect-btn"
+                  onPress={detectSms}
+                  disabled={!smsText.trim()}
+                  style={({ pressed }) => [
+                    styles.detectBtn,
+                    { opacity: !smsText.trim() ? 0.5 : pressed ? 0.9 : 1 },
+                  ]}
+                >
+                  <Ionicons name="sparkles" size={16} color="#fff" />
+                  <Text style={styles.detectBtnText}>Detect & prefill</Text>
+                </Pressable>
+
+                <Text style={styles.samplesLabel}>Try a sample</Text>
+                {SMS_SAMPLES.map((s, i) => (
+                  <Pressable
+                    key={i}
+                    testID={`sample-${i}`}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      setSmsText(s);
+                    }}
+                    style={styles.sampleCard}
+                  >
+                    <Ionicons name="chatbox-ellipses-outline" size={14} color={colors.brand} />
+                    <Text style={styles.sampleText} numberOfLines={2}>
+                      {s}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : (
+              <>
+                {smsBanner && (
+                  <View
+                    style={[
+                      styles.banner,
+                      {
+                        backgroundColor: bannerColor + "1A",
+                        borderColor: bannerColor + "44",
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name={smsBanner.missing.length === 0 ? "checkmark-circle" : "alert-circle"}
+                      size={16}
+                      color={bannerColor}
+                    />
+                    <Text style={styles.bannerText}>{bannerText}</Text>
+                    <Pressable onPress={() => setSmsBanner(null)} hitSlop={8}>
+                      <Ionicons name="close" size={14} color={colors.muted} />
+                    </Pressable>
+                  </View>
+                )}
+
+                {/* Type toggle */}
+                <View style={styles.typeRow}>
+                  {TYPE_OPTIONS.map((o) => {
+                    const active = type === o.key;
+                    return (
+                      <Pressable
+                        key={o.key}
+                        testID={`type-${o.key}`}
+                        onPress={() => {
+                          Haptics.selectionAsync();
+                          setType(o.key);
+                        }}
+                        style={[
+                          styles.typeBtn,
+                          active && { backgroundColor: o.color + "1A", borderColor: o.color },
+                        ]}
+                      >
+                        <Ionicons name={o.icon} size={16} color={active ? o.color : colors.muted} />
+                        <Text
+                          style={[
+                            styles.typeText,
+                            { color: active ? o.color : colors.onSurface, fontWeight: active ? "800" : "600" },
+                          ]}
+                        >
+                          {o.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                {/* Amount */}
+                <View style={styles.amountWrap}>
+                  <Text style={styles.amountCurrency}>{currency.symbol}</Text>
+                  <TextInput
+                    testID="amount-input"
+                    value={amount}
+                    onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))}
+                    placeholder="0"
+                    placeholderTextColor={colors.borderStrong}
+                    keyboardType="decimal-pad"
+                    style={[styles.amountInput, { color: typeMeta.color }]}
+                    autoFocus={!smsBanner}
+                  />
+                </View>
+
+                {/* Date */}
+                <Text style={styles.sectionLabel}>Date</Text>
+                <Pressable
+                  testID="date-picker-btn"
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    setPickingDate(true);
+                  }}
+                  style={styles.datePickerBtn}
+                >
+                  <View style={styles.datePickerIcon}>
+                    <Ionicons name="calendar" size={14} color={colors.brand} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.datePickerLabel}>{dateLabel}</Text>
+                    <Text style={styles.datePickerSub}>Tap to change</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+                </Pressable>
+
+                {/* Category — horizontal scroll */}
+                <Text style={styles.sectionLabel}>
+                  Category{" "}
+                  {mustChooseCategory ? (
+                    <Text style={{ color: colors.error, fontSize: 11 }}>· required</Text>
+                  ) : null}
+                </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.catRow}
+                >
+                  {filtered.map((c) => {
+                    const active = categoryId === c.id;
+                    return (
+                      <Pressable
+                        key={c.id}
+                        testID={`cat-${c.id}`}
+                        onPress={() => selectCategory(c.id)}
+                        style={[
+                          styles.catChip,
+                          active && { backgroundColor: c.color + "1A", borderColor: c.color },
+                        ]}
+                      >
+                        <View style={[styles.catIcon, { backgroundColor: c.color + "22" }]}>
+                          <Ionicons name={c.icon as any} size={16} color={c.color} />
+                        </View>
+                        <Text
+                          style={[styles.catLabel, active && { color: c.color, fontWeight: "800" }]}
+                          numberOfLines={1}
+                        >
+                          {c.name}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+
+                {/* Note */}
+                <Text style={styles.sectionLabel}>Note (optional)</Text>
+                <TextInput
+                  testID="note-input"
+                  value={note}
+                  onChangeText={setNote}
+                  placeholder="What was this for?"
+                  placeholderTextColor={colors.muted}
+                  style={styles.noteInput}
+                  multiline
+                />
+              </>
+            )}
+          </ScrollView>
+
+          {mode === "manual" && (
+            <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+              <Pressable
+                testID="save-tx-btn"
+                onPress={handleSave}
+                disabled={saving || !amount || !categoryId}
+                style={({ pressed }) => [
+                  styles.saveBtn,
                   {
-                    backgroundColor:
-                      smsBanner.confidence === "high"
-                        ? colors.success + "1A"
-                        : smsBanner.confidence === "medium"
-                        ? colors.warning + "1A"
-                        : colors.error + "1A",
-                    borderColor:
-                      smsBanner.confidence === "high"
-                        ? colors.success + "44"
-                        : smsBanner.confidence === "medium"
-                        ? colors.warning + "44"
-                        : colors.error + "44",
+                    backgroundColor: typeMeta.color,
+                    opacity: !amount || !categoryId ? 0.5 : pressed ? 0.9 : 1,
                   },
                 ]}
               >
-                <Ionicons
-                  name={smsBanner.confidence === "high" ? "checkmark-circle" : "alert-circle"}
-                  size={16}
-                  color={
-                    smsBanner.confidence === "high"
-                      ? colors.success
-                      : smsBanner.confidence === "medium"
-                      ? colors.warning
-                      : colors.error
-                  }
-                />
-                <Text style={styles.bannerText}>
-                  {smsBanner.confidence === "high"
-                    ? "SMS detected — please confirm the details"
-                    : `Partial match — please fill in ${smsBanner.missing.join(" and ")}`}
-                </Text>
-                <Pressable onPress={() => setSmsBanner(null)} hitSlop={8}>
-                  <Ionicons name="close" size={14} color={colors.muted} />
-                </Pressable>
-              </View>
-            )}
-
-            {/* Type toggle */}
-            <View style={styles.typeRow}>
-              {TYPE_OPTIONS.map((o) => {
-                const active = type === o.key;
-                return (
-                  <Pressable
-                    key={o.key}
-                    testID={`type-${o.key}`}
-                    onPress={() => {
-                      Haptics.selectionAsync();
-                      setType(o.key);
-                    }}
-                    style={[
-                      styles.typeBtn,
-                      active && { backgroundColor: o.color + "1A", borderColor: o.color },
-                    ]}
-                  >
-                    <Ionicons name={o.icon} size={18} color={active ? o.color : colors.muted} />
-                    <Text
-                      style={[
-                        styles.typeText,
-                        { color: active ? o.color : colors.onSurface, fontWeight: active ? "800" : "600" },
-                      ]}
-                    >
-                      {o.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+                <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                <Text style={styles.saveText}>Save {typeMeta.label.toLowerCase()}</Text>
+              </Pressable>
             </View>
-
-            {/* 1. Amount */}
-            <View style={styles.amountWrap}>
-              <Text style={styles.amountCurrency}>{currency.symbol}</Text>
-              <TextInput
-                testID="amount-input"
-                value={amount}
-                onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))}
-                placeholder="0"
-                placeholderTextColor={colors.borderStrong}
-                keyboardType="decimal-pad"
-                style={[styles.amountInput, { color: typeMeta.color }]}
-                autoFocus={!smsBanner}
-              />
-            </View>
-
-            {/* 2. Date — calendar picker */}
-            <Text style={styles.sectionLabel}>Date</Text>
-            <Pressable
-              testID="date-picker-btn"
-              onPress={() => {
-                Haptics.selectionAsync();
-                setPickingDate(true);
-              }}
-              style={styles.datePickerBtn}
-            >
-              <View style={styles.datePickerIcon}>
-                <Ionicons name="calendar" size={16} color={colors.brand} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.datePickerLabel}>{dateLabel}</Text>
-                <Text style={styles.datePickerSub}>Tap to change</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={colors.muted} />
-            </Pressable>
-
-            {/* 3. Category */}
-            <Text style={styles.sectionLabel}>Category</Text>
-            <View style={styles.catGrid}>
-              {filtered.map((c) => {
-                const active = categoryId === c.id;
-                return (
-                  <Pressable
-                    key={c.id}
-                    testID={`cat-${c.id}`}
-                    onPress={() => {
-                      Haptics.selectionAsync();
-                      setCategoryId(c.id);
-                    }}
-                    style={[
-                      styles.catCell,
-                      active && { backgroundColor: c.color + "1A", borderColor: c.color },
-                    ]}
-                  >
-                    <View style={[styles.catIcon, { backgroundColor: c.color + "22" }]}>
-                      <Ionicons name={c.icon as any} size={16} color={c.color} />
-                    </View>
-                    <Text
-                      style={[styles.catLabel, active && { color: c.color, fontWeight: "800" }]}
-                      numberOfLines={1}
-                    >
-                      {c.name}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            {/* 4. Note */}
-            <Text style={styles.sectionLabel}>Note (optional)</Text>
-            <TextInput
-              testID="note-input"
-              value={note}
-              onChangeText={setNote}
-              placeholder="What was this for?"
-              placeholderTextColor={colors.muted}
-              style={styles.noteInput}
-              multiline
-            />
-          </>
-        )}
-      </ScrollView>
-
-      {/* Sticky Save button (only in manual mode) */}
-      {mode === "manual" && (
-        <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
-          <Pressable
-            testID="save-tx-btn"
-            onPress={handleSave}
-            disabled={saving || !amount || !categoryId}
-            style={({ pressed }) => [
-              styles.saveBtn,
-              { backgroundColor: typeMeta.color, opacity: !amount || !categoryId ? 0.5 : pressed ? 0.9 : 1 },
-            ]}
-          >
-            <Ionicons name="checkmark-circle" size={20} color="#fff" />
-            <Text style={styles.saveText}>Save {typeMeta.label.toLowerCase()}</Text>
-          </Pressable>
+          )}
         </View>
-      )}
+      </KeyboardAvoidingView>
 
       <DatePickerModal
         visible={pickingDate}
@@ -405,32 +436,53 @@ export default function AddTransaction() {
         maxDate={new Date()}
         title="Transaction date"
       />
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.4)",
+  },
+  sheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: "hidden",
+    ...shadow.fab,
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.borderStrong,
+    alignSelf: "center",
+    marginTop: 10,
+    marginBottom: 6,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: spacing.lg,
-    paddingBottom: 8,
+    paddingVertical: 6,
   },
   headerBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: colors.surfaceTertiary,
     alignItems: "center",
     justifyContent: "center",
   },
-  headerTitle: { fontSize: 17, fontWeight: "800", color: colors.onSurface },
+  headerTitle: { fontSize: 15, fontWeight: "800", color: colors.onSurface },
   modeSwitch: {
     flexDirection: "row",
     marginHorizontal: spacing.lg,
-    marginTop: 8,
-    marginBottom: 8,
+    marginTop: 6,
+    marginBottom: 4,
     padding: 4,
     borderRadius: radius.pill,
     backgroundColor: colors.surfaceTertiary,
@@ -440,7 +492,7 @@ const styles = StyleSheet.create({
   },
   modeBtn: {
     flex: 1,
-    height: 36,
+    height: 34,
     borderRadius: radius.pill,
     flexDirection: "row",
     alignItems: "center",
@@ -454,7 +506,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    padding: 14,
+    padding: 12,
     backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.lg,
     borderWidth: 1,
@@ -462,17 +514,17 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   smsHeroIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: colors.brandTertiary,
     alignItems: "center",
     justifyContent: "center",
   },
-  smsTitle: { fontSize: 14, fontWeight: "800", color: colors.onSurface },
+  smsTitle: { fontSize: 13, fontWeight: "800", color: colors.onSurface },
   smsSub: { fontSize: 11, color: colors.muted, marginTop: 2, lineHeight: 15 },
   textarea: {
-    marginTop: 12,
+    marginTop: 10,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surfaceSecondary,
@@ -480,12 +532,12 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 14,
     color: colors.onSurface,
-    minHeight: 100,
+    minHeight: 90,
     textAlignVertical: "top",
   },
   detectBtn: {
-    marginTop: 12,
-    height: 50,
+    marginTop: 10,
+    height: 48,
     borderRadius: radius.pill,
     backgroundColor: colors.brand,
     alignItems: "center",
@@ -501,7 +553,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
     fontWeight: "700",
-    marginTop: 20,
+    marginTop: 16,
     marginBottom: 8,
   },
   sampleCard: {
@@ -521,7 +573,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     marginHorizontal: spacing.lg,
-    marginBottom: 8,
+    marginTop: 8,
+    marginBottom: 4,
     padding: 10,
     borderRadius: radius.md,
     borderWidth: 1,
@@ -530,12 +583,12 @@ const styles = StyleSheet.create({
   typeRow: {
     flexDirection: "row",
     marginHorizontal: spacing.lg,
-    marginTop: 4,
+    marginTop: 8,
     gap: 8,
   },
   typeBtn: {
     flex: 1,
-    height: 52,
+    height: 48,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
@@ -544,22 +597,22 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 2,
   },
-  typeText: { fontSize: 12 },
+  typeText: { fontSize: 11 },
   amountWrap: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 20,
+    marginTop: 16,
     paddingHorizontal: 20,
   },
   amountCurrency: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: "700",
     color: colors.muted,
     marginRight: 6,
   },
   amountInput: {
-    fontSize: 52,
+    fontSize: 44,
     fontWeight: "800",
     letterSpacing: -1.5,
     minWidth: 60,
@@ -573,7 +626,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     fontWeight: "700",
     marginHorizontal: spacing.lg,
-    marginTop: 18,
+    marginTop: 14,
     marginBottom: 8,
   },
   datePickerBtn: {
@@ -581,37 +634,39 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     marginHorizontal: spacing.lg,
-    padding: 12,
+    padding: 10,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surfaceSecondary,
   },
   datePickerIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: colors.brandTertiary,
     alignItems: "center",
     justifyContent: "center",
   },
-  datePickerLabel: { fontSize: 14, fontWeight: "800", color: colors.onSurface },
-  datePickerSub: { fontSize: 11, color: colors.muted, marginTop: 2 },
-  catGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+  datePickerLabel: { fontSize: 13, fontWeight: "800", color: colors.onSurface },
+  datePickerSub: { fontSize: 10, color: colors.muted, marginTop: 2 },
+  catRow: {
     paddingHorizontal: spacing.lg,
     gap: 8,
+    paddingRight: spacing.lg + 6,
   },
-  catCell: {
-    width: "23%",
-    padding: 8,
-    borderRadius: radius.md,
+  catChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingLeft: 8,
+    paddingRight: 14,
+    height: 48,
+    borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surfaceSecondary,
-    alignItems: "center",
-    gap: 4,
+    flexShrink: 0,
   },
   catIcon: {
     width: 30,
@@ -621,10 +676,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   catLabel: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: "600",
     color: colors.onSurface,
-    textAlign: "center",
+    maxWidth: 140,
   },
   noteInput: {
     marginHorizontal: spacing.lg,
@@ -635,18 +690,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary,
     fontSize: 14,
     color: colors.onSurface,
-    minHeight: 64,
+    minHeight: 58,
     textAlignVertical: "top",
   },
   footer: {
     paddingHorizontal: spacing.lg,
-    paddingTop: 12,
+    paddingTop: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.divider,
     backgroundColor: colors.surface,
   },
   saveBtn: {
-    height: 54,
+    height: 52,
     borderRadius: radius.pill,
     alignItems: "center",
     justifyContent: "center",
@@ -656,7 +711,7 @@ const styles = StyleSheet.create({
   },
   saveText: {
     color: "#fff",
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "800",
     letterSpacing: 0.2,
   },
