@@ -21,7 +21,7 @@ import { BlurView } from "expo-blur";
 import { radius, spacing, shadow } from "@/src/theme";
 import { getCategories, addTransaction, Category, TxType, addCategory } from "@/src/store";
 import { useCurrency } from "@/src/currency";
-import { parseSms, SMS_SAMPLES } from "@/src/utils/sms-parser";
+import { parseSms } from "@/src/utils/sms-parser";
 import { DatePickerModal } from "@/src/components/DatePicker";
 import { useTheme } from "@/src/theme/ThemeContext";
 
@@ -271,23 +271,7 @@ export default function AddTransaction() {
                   <Text style={styles.detectBtnText}>Detect & prefill</Text>
                 </Pressable>
 
-                <Text style={styles.samplesLabel}>Try a sample</Text>
-                {SMS_SAMPLES.map((s, i) => (
-                  <Pressable
-                    key={i}
-                    testID={`sample-${i}`}
-                    onPress={() => {
-                      Haptics.selectionAsync();
-                      setSmsText(s);
-                    }}
-                    style={styles.sampleCard}
-                  >
-                    <Ionicons name="chatbox-ellipses-outline" size={14} color={colors.brand} />
-                    <Text style={styles.sampleText} numberOfLines={2}>
-                      {s}
-                    </Text>
-                  </Pressable>
-                ))}
+
               </View>
             ) : (
               <>
@@ -662,27 +646,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     ...shadow.fab,
   },
   detectBtnText: { color: "#fff", fontWeight: "800", fontSize: 14 },
-  samplesLabel: {
-    fontSize: 11,
-    color: colors.muted,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    fontWeight: "700",
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  sampleCard: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-    padding: 12,
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: 8,
-  },
-  sampleText: { flex: 1, fontSize: 12, color: colors.onSurface, lineHeight: 17 },
+
   banner: {
     flexDirection: "row",
     alignItems: "center",
