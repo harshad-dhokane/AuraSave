@@ -40,6 +40,12 @@
           "resizeMode": "contain",
           "backgroundColor": "#000000"
         }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow Aura Wealth to use Face ID to unlock the app securely."
+        }
       ]
     ],
     "experiments": {

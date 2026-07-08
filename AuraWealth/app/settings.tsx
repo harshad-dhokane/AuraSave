@@ -22,6 +22,10 @@ import { radius, spacing, shadow } from "@/src/theme";
 import { getProfile, setProfile, clearAllData, getTransactions } from "@/src/store";
 import { useCurrency, CURRENCIES, Currency } from "@/src/currency";
 import { useAuth } from "@/src/context/AuthContext";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as LocalAuthentication from "expo-local-authentication";
+import * as SecureStore from "expo-secure-store";
+import { PinPad } from "@/src/components/PinPad";
 
 import { useTheme } from "@/src/theme/ThemeContext";
 
@@ -41,6 +45,12 @@ export default function Settings() {
   const [txCount, setTxCount] = useState(0);
   const [pickingCurrency, setPickingCurrency] = useState(false);
   const [pickingTheme, setPickingTheme] = useState(false);
+  const [appLock, setAppLock] = useState(false);
+
+  const [settingPin, setSettingPin] = useState(false);
+  const [pinStep, setPinStep] = useState<"enter" | "confirm">("enter");
+  const [firstPin, setFirstPin] = useState("");
+  const [pinError, setPinError] = useState("");
 
   const styles = React.useMemo(() => createStyles(colors), [colors]);
 
@@ -50,6 +60,8 @@ export default function Settings() {
     setTempName(p.name === "there" ? "" : p.name);
     const t = await getTransactions();
     setTxCount(t.length);
+    const lock = await AsyncStorage.getItem("appLockEnabled");
+    setAppLock(lock === "true");
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -97,6 +109,41 @@ export default function Settings() {
     if (mode === 'light') return 'Light';
     if (mode === 'dark') return 'Dark';
     return 'System Default';
+  };
+
+  const toggleAppLock = async () => {
+    if (!appLock) {
+      setPinStep("enter");
+      setFirstPin("");
+      setPinError("");
+      setSettingPin(true);
+    } else {
+      await AsyncStorage.setItem("appLockEnabled", "false");
+      await SecureStore.deleteItemAsync("appCustomPin");
+      setAppLock(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  };
+
+  const handlePinComplete = async (pin: string) => {
+    if (pinStep === "enter") {
+      setFirstPin(pin);
+      setPinStep("confirm");
+      setPinError("");
+    } else {
+      if (pin === firstPin) {
+        // Success
+        await SecureStore.setItemAsync("appCustomPin", pin);
+        await AsyncStorage.setItem("appLockEnabled", "true");
+        setAppLock(true);
+        setSettingPin(false);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else {
+        setPinError("PINs do not match. Try again.");
+        setFirstPin("");
+        setPinStep("enter");
+      }
+    }
   };
 
   return (
@@ -148,8 +195,18 @@ export default function Settings() {
           <SettingRow icon="cloud" color={colors.info} title="Data storage" value="Synced securely" colors={colors} styles={styles} />
         </RowGroup>
 
-        <SectionLabel text="Account" colors={colors} styles={styles} />
+        <SectionLabel text="Account & Security" colors={colors} styles={styles} />
         <RowGroup styles={styles}>
+          <SettingRow
+            testID="app-lock-row"
+            icon="lock-closed"
+            color={colors.success}
+            title="App Lock"
+            value={appLock ? "Enabled" : "Disabled"}
+            onPress={toggleAppLock}
+            colors={colors}
+            styles={styles}
+          />
           <SettingRow
             testID="sign-out-btn"
             icon="log-out-outline"
@@ -354,6 +411,24 @@ export default function Settings() {
               }}
             />
           </View>
+        </View>
+      </Modal>
+
+      {/* PIN Setup Modal */}
+      <Modal transparent visible={settingPin} animationType="slide" onRequestClose={() => setSettingPin(false)}>
+        <View style={{ flex: 1, backgroundColor: colors.surface }}>
+          <View style={[styles.header, { paddingTop: insets.top + 6, paddingBottom: 0 }]}>
+            <View style={{ width: 40 }} />
+            <View style={{ width: 40 }} />
+          </View>
+          <PinPad
+            title={pinStep === "enter" ? "Create App PIN" : "Confirm PIN"}
+            subtitle={pinStep === "enter" ? "Enter a 4-digit PIN for Aura Wealth" : "Enter the PIN again to confirm"}
+            error={pinError}
+            onPinComplete={handlePinComplete}
+            showCancel
+            onCancel={() => setSettingPin(false)}
+          />
         </View>
       </Modal>
     </View>
