@@ -28,7 +28,7 @@ export default function AuthScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const insets = useSafeAreaInsets();
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, signInWithGoogle } = useAuth();
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -85,6 +85,23 @@ export default function AuthScreen() {
     setLoading(false);
   };
 
+  const handleGoogleSignIn = async () => {
+    setError(null);
+    setLoading(true);
+    Haptics.selectionAsync();
+    
+    const { error: err } = await signInWithGoogle();
+    
+    if (err) {
+      setError(err);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } else {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+    
+    setLoading(false);
+  };
+
   const toggleMode = () => {
     Haptics.selectionAsync();
     setMode(mode === "login" ? "signup" : "login");
@@ -102,6 +119,8 @@ export default function AuthScreen() {
           contentContainerStyle={{ flexGrow: 1 }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          bounces={false}
+          overScrollMode="never"
         >
           {/* Hero header */}
           <View style={styles.heroWrap}>
@@ -122,7 +141,7 @@ export default function AuthScreen() {
               end={{ x: 0, y: 1 }}
             />
             <View
-              style={[styles.heroContent, { paddingTop: insets.top + 40 }]}
+              style={[styles.heroContent, { paddingTop: insets.top }]}
             >
               <View style={styles.logoBadge}>
                 <Ionicons name="leaf" size={18} color={colors.brandSecondary} />
@@ -295,6 +314,26 @@ export default function AuthScreen() {
               )}
             </Pressable>
 
+            {/* Google SignIn */}
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>OR</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <Pressable
+              testID="auth-google"
+              onPress={handleGoogleSignIn}
+              disabled={loading}
+              style={({ pressed }) => [
+                styles.googleBtn,
+                { opacity: loading ? 0.6 : pressed ? 0.9 : 1 },
+              ]}
+            >
+              <Ionicons name="logo-google" size={18} color={colors.onSurface} />
+              <Text style={styles.googleText}>Continue with Google</Text>
+            </Pressable>
+
             {/* Toggle link */}
             <View style={styles.toggleRow}>
               <Text style={styles.toggleText}>
@@ -310,7 +349,7 @@ export default function AuthScreen() {
             </View>
           </View>
 
-          <View style={{ height: insets.bottom + 20 }} />
+          <View style={{ height: insets.bottom }} />
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -319,14 +358,13 @@ export default function AuthScreen() {
 
 const createStyles = (colors: any) => StyleSheet.create({
   heroWrap: {
-    height: 280,
+    height: 220,
     overflow: "hidden",
   },
   heroContent: {
     flex: 1,
     alignItems: "center",
-    justifyContent: "flex-end",
-    paddingBottom: 32,
+    justifyContent: "center",
   },
   logoBadge: {
     width: 48,
@@ -337,7 +375,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     borderColor: "rgba(255,255,255,0.2)",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 14,
+    marginBottom: 8,
   },
   heroTitle: {
     fontSize: 32,
@@ -354,7 +392,7 @@ const createStyles = (colors: any) => StyleSheet.create({
   },
   formWrap: {
     paddingHorizontal: spacing.xl,
-    paddingTop: spacing.xl,
+    paddingTop: spacing.lg,
   },
   tabRow: {
     flexDirection: "row",
@@ -442,7 +480,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     flexDirection: "row",
     gap: 8,
     overflow: "hidden",
-    marginTop: 24,
+    marginTop: 16,
     ...shadow.fab,
   },
   submitText: {
@@ -456,7 +494,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    marginTop: 20,
+    marginTop: 16,
   },
   toggleText: {
     fontSize: 13,
@@ -466,5 +504,38 @@ const createStyles = (colors: any) => StyleSheet.create({
     fontSize: 13,
     color: colors.brand,
     fontWeight: "800",
+  },
+  dividerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 16,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
+  },
+  dividerText: {
+    marginHorizontal: 12,
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.muted,
+  },
+  googleBtn: {
+    height: 54,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    ...shadow.card,
+  },
+  googleText: {
+    color: colors.onSurface,
+    fontSize: 15,
+    fontWeight: "700",
   },
 });

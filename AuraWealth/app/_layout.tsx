@@ -41,12 +41,14 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     }
   }, [loading, session]);
 
+  useEffect(() => {
+    if (!loading) {
+      SplashScreen.hideAsync();
+    }
+  }, [loading]);
+
   if (loading) {
-    return (
-      <View style={{ flex: 1, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator size="large" color={colors.brandPrimary} />
-      </View>
-    );
+    return null;
   }
 
   return <>{children}</>;
@@ -78,11 +80,7 @@ function AppContent() {
 export default function RootLayout() {
   const [loaded, error] = useIconFonts();
 
-  useEffect(() => {
-    if (loaded || error) {
-      SplashScreen.hideAsync();
-    }
-  }, [loaded, error]);
+  // Splash screen is now hidden in AuthGate once authentication state is resolved
 
   if (!loaded && !error) return null;
 
