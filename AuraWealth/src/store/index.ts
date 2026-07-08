@@ -84,6 +84,29 @@ function isMissingDbShape(error: any): boolean {
   );
 }
 
+
+// ── Cache ──────────────────────────────────────────────────────────────────
+const _qCache = new Map<string, { data: any; ts: number; promise?: Promise<any> }>();
+
+export function clearCache() {
+  _qCache.clear();
+}
+
+async function withCache<T>(key: string, fetcher: () => Promise<T>, ttl = 10000): Promise<T> {
+  const c = _qCache.get(key);
+  if (c && Date.now() - c.ts < ttl) return c.data;
+  if (c?.promise) return c.promise;
+  const p = fetcher().then(d => {
+    _qCache.set(key, { data: d, ts: Date.now() });
+    return d;
+  }).catch(e => {
+    _qCache.delete(key);
+    throw e;
+  });
+  _qCache.set(key, { ...c, promise: p } as any);
+  return p;
+}
+
 // ── Cached User ID ──────────────────────────────────────────────────────────
 // Avoids redundant auth round-trips on every single DB call
 let _cachedUserId: string | null = null;
@@ -103,22 +126,24 @@ supabase.auth.onAuthStateChange((_event, session) => {
 
 // ─── Transactions ───────────────────────────────────────────────────────────
 export async function getTransactions(): Promise<Transaction[]> {
+  return withCache('tx', async () => {
   const userId = await getUserId();
-  const { data, error } = await supabase
-    .from("transactions")
-    .select("id, type, amount, category_id, note, date, created_at")
-    .eq("user_id", userId)
-    .order("date", { ascending: false });
-  if (error) throw error;
-  return (data || []).map((r: any) => ({
-    id: r.id,
-    type: r.type,
-    amount: Number(r.amount),
-    categoryId: r.category_id,
-    note: r.note || undefined,
-    date: r.date,
-    createdAt: r.created_at,
-  }));
+    const { data, error } = await supabase
+      .from("transactions")
+      .select("id, type, amount, category_id, note, date, created_at")
+      .eq("user_id", userId)
+      .order("date", { ascending: false });
+    if (error) throw error;
+    return (data || []).map((r: any) => ({
+      id: r.id,
+      type: r.type,
+      amount: Number(r.amount),
+      categoryId: r.category_id,
+      note: r.note || undefined,
+      date: r.date,
+      createdAt: r.created_at,
+    }));
+  });
 }
 
 export async function addTransaction(tx: Omit<Transaction, "id" | "createdAt">): Promise<Transaction> {
@@ -134,34 +159,38 @@ export async function addTransaction(tx: Omit<Transaction, "id" | "createdAt">):
     date: tx.date,
   });
   if (error) throw error;
+  clearCache();
   return { ...tx, id, createdAt: new Date().toISOString() };
 }
 
 export async function deleteTransaction(id: string): Promise<void> {
   const { error } = await supabase.from("transactions").delete().eq("id", id);
   if (error) throw error;
+  clearCache();
 }
 
 // ─── Categories ─────────────────────────────────────────────────────────────
 export async function getCategories(): Promise<Category[]> {
+  return withCache('cat', async () => {
   const userId = await getUserId();
-  const { data, error } = await supabase
-    .from("categories")
-    .select("id, name, icon, color, type")
-    .eq("user_id", userId);
-  if (error) throw error;
-  if (!data || data.length === 0) {
-    // Seed default categories for this user
-    await seedCategories(userId);
-    return DEFAULT_CATEGORIES;
-  }
-  return data.map((r: any) => ({
-    id: r.id,
-    name: r.name,
-    icon: r.icon,
-    color: r.color,
-    type: r.type,
-  }));
+    const { data, error } = await supabase
+      .from("categories")
+      .select("id, name, icon, color, type")
+      .eq("user_id", userId);
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      // Seed default categories for this user
+      await seedCategories(userId);
+      return DEFAULT_CATEGORIES;
+    }
+    return data.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      icon: r.icon,
+      color: r.color,
+      type: r.type,
+    }));
+  });
 }
 
 async function seedCategories(userId: string): Promise<void> {
@@ -191,38 +220,41 @@ export async function addCategory(cat: Omit<Category, "id">): Promise<Category> 
     is_default: false,
   });
   if (error) throw error;
+  clearCache();
   return { ...cat, id };
 }
 
 // ─── Budgets ────────────────────────────────────────────────────────────────
 export async function getBudgets(): Promise<Budget[]> {
+  return withCache('bg', async () => {
   const userId = await getUserId();
-  const baseQuery = () => supabase.from("budgets").select("id, category_id, limit, month").eq("user_id", userId);
-  const extendedQuery = () => supabase
-    .from("budgets")
-    .select("id, category_id, limit, month, kind, rollover_enabled, alert_percent, recurring_day, notes")
-    .eq("user_id", userId);
-
-  let result = await extendedQuery();
-  let data: any[] | null = result.data as any[] | null;
-  let error: any = result.error;
-  if (error && isMissingDbShape(error)) {
-    const fallback = await baseQuery();
-    data = fallback.data as any[] | null;
-    error = fallback.error;
-  }
-  if (error) throw error;
-  return (data || []).map((r: any) => ({
-    id: r.id,
-    categoryId: r.category_id,
-    limit: Number(r.limit),
-    month: r.month,
-    kind: r.kind || "flexible",
-    rolloverEnabled: r.rollover_enabled === true,
-    alertPercent: Number(r.alert_percent || 80),
-    recurringDay: r.recurring_day ? Number(r.recurring_day) : undefined,
-    notes: r.notes || undefined,
-  }));
+    const baseQuery = () => supabase.from("budgets").select("id, category_id, limit, month").eq("user_id", userId);
+    const extendedQuery = () => supabase
+      .from("budgets")
+      .select("id, category_id, limit, month, kind, rollover_enabled, alert_percent, recurring_day, notes")
+      .eq("user_id", userId);
+  
+    let result = await extendedQuery();
+    let data: any[] | null = result.data as any[] | null;
+    let error: any = result.error;
+    if (error && isMissingDbShape(error)) {
+      const fallback = await baseQuery();
+      data = fallback.data as any[] | null;
+      error = fallback.error;
+    }
+    if (error) throw error;
+    return (data || []).map((r: any) => ({
+      id: r.id,
+      categoryId: r.category_id,
+      limit: Number(r.limit),
+      month: r.month,
+      kind: r.kind || "flexible",
+      rolloverEnabled: r.rollover_enabled === true,
+      alertPercent: Number(r.alert_percent || 80),
+      recurringDay: r.recurring_day ? Number(r.recurring_day) : undefined,
+      notes: r.notes || undefined,
+    }));
+  });
 }
 
 export async function upsertBudget(b: Omit<Budget, "id"> & { id?: string }): Promise<Budget> {
@@ -293,6 +325,7 @@ export async function upsertBudget(b: Omit<Budget, "id"> & { id?: string }): Pro
       error = fallback.error;
     }
     if (error) throw error;
+  clearCache();
     return {
       id,
       categoryId: b.categoryId,
@@ -310,46 +343,49 @@ export async function upsertBudget(b: Omit<Budget, "id"> & { id?: string }): Pro
 export async function deleteBudget(id: string): Promise<void> {
   const { error } = await supabase.from("budgets").delete().eq("id", id);
   if (error) throw error;
+  clearCache();
 }
 
 // ─── Goals ──────────────────────────────────────────────────────────────────
 export async function getGoals(): Promise<Goal[]> {
+  return withCache('gl', async () => {
   const userId = await getUserId();
-  const baseQuery = () => supabase
-    .from("goals")
-    .select("id, title, target, saved, deadline, period, status, created_at")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false });
-  const extendedQuery = () => supabase
-    .from("goals")
-    .select("id, title, target, saved, deadline, period, status, priority, is_paused, is_archived, auto_contribution_amount, auto_contribution_day, created_at")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false });
-
-  let result = await extendedQuery();
-  let data: any[] | null = result.data as any[] | null;
-  let error: any = result.error;
-  if (error && isMissingDbShape(error)) {
-    const fallback = await baseQuery();
-    data = fallback.data as any[] | null;
-    error = fallback.error;
-  }
-  if (error) throw error;
-  return (data || []).map((r: any) => ({
-    id: r.id,
-    title: r.title,
-    target: Number(r.target),
-    saved: Number(r.saved),
-    deadline: r.deadline || undefined,
-    period: r.period || undefined,
-    status: r.status || "pending",
-    priority: r.priority || "medium",
-    isPaused: r.is_paused === true,
-    isArchived: r.is_archived === true,
-    autoContributionAmount: r.auto_contribution_amount ? Number(r.auto_contribution_amount) : undefined,
-    autoContributionDay: r.auto_contribution_day ? Number(r.auto_contribution_day) : undefined,
-    createdAt: r.created_at,
-  }));
+    const baseQuery = () => supabase
+      .from("goals")
+      .select("id, title, target, saved, deadline, period, status, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+    const extendedQuery = () => supabase
+      .from("goals")
+      .select("id, title, target, saved, deadline, period, status, priority, is_paused, is_archived, auto_contribution_amount, auto_contribution_day, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+  
+    let result = await extendedQuery();
+    let data: any[] | null = result.data as any[] | null;
+    let error: any = result.error;
+    if (error && isMissingDbShape(error)) {
+      const fallback = await baseQuery();
+      data = fallback.data as any[] | null;
+      error = fallback.error;
+    }
+    if (error) throw error;
+    return (data || []).map((r: any) => ({
+      id: r.id,
+      title: r.title,
+      target: Number(r.target),
+      saved: Number(r.saved),
+      deadline: r.deadline || undefined,
+      period: r.period || undefined,
+      status: r.status || "pending",
+      priority: r.priority || "medium",
+      isPaused: r.is_paused === true,
+      isArchived: r.is_archived === true,
+      autoContributionAmount: r.auto_contribution_amount ? Number(r.auto_contribution_amount) : undefined,
+      autoContributionDay: r.auto_contribution_day ? Number(r.auto_contribution_day) : undefined,
+      createdAt: r.created_at,
+    }));
+  });
 }
 
 export async function addGoal(g: Omit<Goal, "id" | "createdAt">): Promise<Goal> {
@@ -385,6 +421,7 @@ export async function addGoal(g: Omit<Goal, "id" | "createdAt">): Promise<Goal> 
     error = fallback.error;
   }
   if (error) throw error;
+  clearCache();
   return { ...g, id, status: g.status || "pending", priority: g.priority || "medium", createdAt: new Date().toISOString() };
 }
 
@@ -412,11 +449,13 @@ export async function updateGoal(id: string, patch: Partial<Goal>): Promise<void
     error = fallback.error;
   }
   if (error) throw error;
+  clearCache();
 }
 
 export async function deleteGoal(id: string): Promise<void> {
   const { error } = await supabase.from("goals").delete().eq("id", id);
   if (error) throw error;
+  clearCache();
 }
 
 // ─── Goal Contributions ─────────────────────────────────────────────────────
@@ -428,23 +467,25 @@ export interface GoalContribution {
 }
 
 export async function getGoalContributions(goalId?: string): Promise<GoalContribution[]> {
+  return withCache('gc', async () => {
   let query = supabase
-    .from("goal_contributions")
-    .select("id, goal_id, amount, created_at")
-    .order("created_at", { ascending: false });
-    
-  if (goalId) {
-    query = query.eq("goal_id", goalId);
-  }
-
-  const { data, error } = await query;
-  if (error) throw error;
-  return (data || []).map((r: any) => ({
-    id: r.id,
-    goalId: r.goal_id,
-    amount: Number(r.amount),
-    createdAt: r.created_at,
-  }));
+      .from("goal_contributions")
+      .select("id, goal_id, amount, created_at")
+      .order("created_at", { ascending: false });
+      
+    if (goalId) {
+      query = query.eq("goal_id", goalId);
+    }
+  
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []).map((r: any) => ({
+      id: r.id,
+      goalId: r.goal_id,
+      amount: Number(r.amount),
+      createdAt: r.created_at,
+    }));
+  });
 }
 
 export async function addGoalContribution(goalId: string, amount: number): Promise<GoalContribution> {
@@ -457,6 +498,7 @@ export async function addGoalContribution(goalId: string, amount: number): Promi
     amount,
   });
   if (error) throw error;
+  clearCache();
   return { id, goalId, amount, createdAt: new Date().toISOString() };
 }
 
@@ -520,46 +562,48 @@ function dedupeLoans(loans: Loan[]): Loan[] {
 }
 
 export async function getLoans(): Promise<Loan[]> {
+  return withCache('ln', async () => {
   const userId = await getUserId();
-  const baseQuery = () => supabase
-    .from("loans")
-    .select("id, type, person, amount, paid_amount, date, due_date, status, repayment_expected, notes, created_at")
-    .eq("user_id", userId)
-    .order("date", { ascending: false });
-  const extendedQuery = () => supabase
-    .from("loans")
-    .select("id, type, person, amount, paid_amount, date, due_date, status, repayment_expected, notes, interest_rate, proof_note, group_name, settled_at, reminder_at, created_at")
-    .eq("user_id", userId)
-    .order("date", { ascending: false });
-
-  let result = await extendedQuery();
-  let data: any[] | null = result.data as any[] | null;
-  let error: any = result.error;
-  if (error && isMissingDbShape(error)) {
-    const fallback = await baseQuery();
-    data = fallback.data as any[] | null;
-    error = fallback.error;
-  }
-  if (error) throw error;
-  const loans = (data || []).map((r: any) => ({
-    id: r.id,
-    type: r.type,
-    person: r.person,
-    amount: Number(r.amount),
-    paidAmount: Number(r.paid_amount),
-    date: r.date,
-    dueDate: r.due_date || undefined,
-    status: r.status,
-    repaymentExpected: r.repayment_expected !== false,
-    notes: r.notes || undefined,
-    interestRate: r.interest_rate ? Number(r.interest_rate) : undefined,
-    proofNote: r.proof_note || undefined,
-    groupName: r.group_name || undefined,
-    settledAt: r.settled_at || undefined,
-    reminderAt: r.reminder_at || undefined,
-    createdAt: r.created_at,
-  }));
-  return dedupeLoans(loans);
+    const baseQuery = () => supabase
+      .from("loans")
+      .select("id, type, person, amount, paid_amount, date, due_date, status, repayment_expected, notes, created_at")
+      .eq("user_id", userId)
+      .order("date", { ascending: false });
+    const extendedQuery = () => supabase
+      .from("loans")
+      .select("id, type, person, amount, paid_amount, date, due_date, status, repayment_expected, notes, interest_rate, proof_note, group_name, settled_at, reminder_at, created_at")
+      .eq("user_id", userId)
+      .order("date", { ascending: false });
+  
+    let result = await extendedQuery();
+    let data: any[] | null = result.data as any[] | null;
+    let error: any = result.error;
+    if (error && isMissingDbShape(error)) {
+      const fallback = await baseQuery();
+      data = fallback.data as any[] | null;
+      error = fallback.error;
+    }
+    if (error) throw error;
+    const loans = (data || []).map((r: any) => ({
+      id: r.id,
+      type: r.type,
+      person: r.person,
+      amount: Number(r.amount),
+      paidAmount: Number(r.paid_amount),
+      date: r.date,
+      dueDate: r.due_date || undefined,
+      status: r.status,
+      repaymentExpected: r.repayment_expected !== false,
+      notes: r.notes || undefined,
+      interestRate: r.interest_rate ? Number(r.interest_rate) : undefined,
+      proofNote: r.proof_note || undefined,
+      groupName: r.group_name || undefined,
+      settledAt: r.settled_at || undefined,
+      reminderAt: r.reminder_at || undefined,
+      createdAt: r.created_at,
+    }));
+    return dedupeLoans(loans);
+  });
 }
 
 export async function addLoan(l: Omit<Loan, "id" | "createdAt" | "paidAmount" | "status">): Promise<Loan> {
@@ -600,6 +644,7 @@ export async function addLoan(l: Omit<Loan, "id" | "createdAt" | "paidAmount" | 
     error = fallback.error;
   }
   if (error) throw error;
+  clearCache();
   return { ...l, id, paidAmount: 0, status: l.repaymentExpected ? "active" : "settled", createdAt: new Date().toISOString() };
 }
 
@@ -631,42 +676,46 @@ export async function updateLoan(id: string, patch: Partial<Loan>): Promise<void
     error = fallback.error;
   }
   if (error) throw error;
+  clearCache();
 }
 
 export async function deleteLoan(id: string): Promise<void> {
   const { error } = await supabase.from("loans").delete().eq("id", id);
   if (error) throw error;
+  clearCache();
 }
 
 export async function getLoanPayments(loanId: string): Promise<LoanPayment[]> {
+  return withCache('lp', async () => {
   const baseQuery = () => supabase
-    .from("loan_payments")
-    .select("id, loan_id, amount, date, created_at")
-    .eq("loan_id", loanId)
-    .order("date", { ascending: false });
-  const extendedQuery = () => supabase
-    .from("loan_payments")
-    .select("id, loan_id, amount, date, note, created_at")
-    .eq("loan_id", loanId)
-    .order("date", { ascending: false });
-
-  let result = await extendedQuery();
-  let data: any[] | null = result.data as any[] | null;
-  let error: any = result.error;
-  if (error && isMissingDbShape(error)) {
-    const fallback = await baseQuery();
-    data = fallback.data as any[] | null;
-    error = fallback.error;
-  }
-  if (error) throw error;
-  return (data || []).map((r: any) => ({
-    id: r.id,
-    loanId: r.loan_id,
-    amount: Number(r.amount),
-    date: r.date,
-    note: r.note || undefined,
-    createdAt: r.created_at,
-  }));
+      .from("loan_payments")
+      .select("id, loan_id, amount, date, created_at")
+      .eq("loan_id", loanId)
+      .order("date", { ascending: false });
+    const extendedQuery = () => supabase
+      .from("loan_payments")
+      .select("id, loan_id, amount, date, note, created_at")
+      .eq("loan_id", loanId)
+      .order("date", { ascending: false });
+  
+    let result = await extendedQuery();
+    let data: any[] | null = result.data as any[] | null;
+    let error: any = result.error;
+    if (error && isMissingDbShape(error)) {
+      const fallback = await baseQuery();
+      data = fallback.data as any[] | null;
+      error = fallback.error;
+    }
+    if (error) throw error;
+    return (data || []).map((r: any) => ({
+      id: r.id,
+      loanId: r.loan_id,
+      amount: Number(r.amount),
+      date: r.date,
+      note: r.note || undefined,
+      createdAt: r.created_at,
+    }));
+  });
 }
 
 export async function addLoanPayment(loanId: string, amount: number, date: string, note?: string): Promise<LoanPayment> {
@@ -691,6 +740,7 @@ export async function addLoanPayment(loanId: string, amount: number, date: strin
     error = fallback.error;
   }
   if (error) throw error;
+  clearCache();
   return { id, loanId, amount, date, note, createdAt: new Date().toISOString() };
 }
 
@@ -700,17 +750,19 @@ export interface Profile {
 }
 
 export async function getProfile(): Promise<Profile> {
+  return withCache('pf', async () => {
   try {
-    const userId = await getUserId();
-    const { data } = await supabase
-      .from("profiles")
-      .select("name")
-      .eq("id", userId)
-      .single();
-    return { name: data?.name || "there" };
-  } catch {
-    return { name: "there" };
-  }
+      const userId = await getUserId();
+      const { data } = await supabase
+        .from("profiles")
+        .select("name")
+        .eq("id", userId)
+        .single();
+      return { name: data?.name || "there" };
+    } catch {
+      return { name: "there" };
+    }
+  });
 }
 
 export async function setProfile(p: Profile): Promise<void> {
@@ -724,6 +776,7 @@ export async function setProfile(p: Profile): Promise<void> {
   } catch (err) {
     console.error("setProfile error:", err);
   }
+  clearCache();
 }
 
 // ─── Batch Loaders (parallel fetching for pages) ────────────────────────────
