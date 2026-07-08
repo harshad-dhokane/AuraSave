@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 import { View, Text, StyleSheet, Pressable, Animated, Modal, Easing } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Audio } from "expo-av";
+import { useAudioRecorder, AudioModule, RecordingPresets } from "expo-audio";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { BlurView } from "expo-blur";
@@ -35,7 +35,7 @@ export const AIAssistant = forwardRef<AIAssistantRef, AIAssistantProps>(({ visib
   const router = useRouter();
   const isStopping = useRef(false);
 
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [status, setStatus] = useState<"idle" | "recording" | "processing" | "success" | "error">("idle");
   const [message, setMessage] = useState("How can I help?");
 
@@ -80,23 +80,24 @@ export const AIAssistant = forwardRef<AIAssistantRef, AIAssistantProps>(({ visib
     isStopping.current = false;
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      const perm = await Audio.requestPermissionsAsync();
+      const perm = await AudioModule.requestRecordingPermissionsAsync();
       if (perm.status !== "granted") {
         setMessage("Microphone access denied.");
         setStatus("error");
         return;
       }
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
+      await AudioModule.setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
       });
 
-      const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
+      
       if (isStopping.current) {
-        await recording.stopAndUnloadAsync();
+        await audioRecorder.stop();
         return;
       }
-      setRecording(recording);
       setStatus("recording");
       setMessage("Listening...");
     } catch (err) {
@@ -108,16 +109,15 @@ export const AIAssistant = forwardRef<AIAssistantRef, AIAssistantProps>(({ visib
 
   const stopRecording = async () => {
     isStopping.current = true;
-    if (!recording) return;
+    if (!audioRecorder.isRecording) return;
     setStatus("processing");
     setMessage("Processing...");
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     try {
-      await recording.stopAndUnloadAsync();
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
-      const uri = recording.getURI();
-      setRecording(null);
+      await audioRecorder.stop();
+      await AudioModule.setAudioModeAsync({ allowsRecording: false });
+      const uri = audioRecorder.uri;
 
       if (!uri) throw new Error("No recording URI");
 
