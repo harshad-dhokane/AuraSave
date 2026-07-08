@@ -30,7 +30,7 @@ const { height: SCREEN_H } = Dimensions.get("window");
 
 
 export default function AddTransaction() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const TYPE_OPTIONS: { key: TxType; label: string; color: string; icon: keyof typeof Ionicons.glyphMap }[] = useMemo(() => [
@@ -477,9 +477,15 @@ export default function AddTransaction() {
       />
 
       {/* New Category Modal */}
-      <Modal visible={showNewCat} transparent animationType="slide" onRequestClose={() => setShowNewCat(false)}>
+      <Modal visible={showNewCat} transparent animationType="fade" onRequestClose={() => setShowNewCat(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "transparent" }}>
-          <BlurView intensity={60} tint="default" style={StyleSheet.absoluteFill}>
+          <BlurView 
+            intensity={45} 
+            tint={isDark ? "systemUltraThinMaterialDark" : "systemUltraThinMaterialLight"} 
+            blurReductionFactor={2}
+            experimentalBlurMethod="dimezisBlurView"
+            style={StyleSheet.absoluteFill}
+          >
             <Pressable style={{ flex: 1 }} onPress={() => setShowNewCat(false)} />
           </BlurView>
           <View style={[styles.sheet, { maxHeight: Math.round(SCREEN_H * 0.75), paddingBottom: Math.max(insets.bottom, 24) }]}>

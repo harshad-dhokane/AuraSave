@@ -8,7 +8,8 @@ import { useRouter, useFocusEffect } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { radius, spacing, shadow } from "@/src/theme";
 import { formatMoney, formatDate } from "@/src/utils/format";
-import { getLoans, Loan } from "@/src/store";
+import { getLoans, Loan, deleteLoan } from "@/src/store";
+import { ConfirmModal } from "@/src/components/ConfirmModal";
 import { EmptyState } from "@/src/components/CategoryIcon";
 import { useCurrency } from "@/src/currency";
 import { useTheme } from "@/src/theme/ThemeContext";
@@ -42,7 +43,18 @@ export default function LendingScreen() {
   const { currency } = useCurrency();
   const [loans, setLoans] = useState<Loan[]>([]);
   const [tab, setTab] = useState<"lent" | "borrowed">("lent");
-  const [filter, setFilter] = useState<LoanFilter>("active");
+  const [filter, setFilter] = useState<LoanFilter>("all");
+  const [deleteLoanId, setDeleteLoanId] = useState<string | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterDropdownTop, setFilterDropdownTop] = useState(0);
+
+  const confirmDelete = async () => {
+    if (!deleteLoanId) return;
+    await deleteLoan(deleteLoanId);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    setDeleteLoanId(null);
+    load();
+  };
 
   const load = useCallback(async () => {
     setLoans(await getLoans());
@@ -60,13 +72,23 @@ export default function LendingScreen() {
 
   const totals = useMemo(() => {
     let lent = 0; let borrowed = 0; let overdue = 0;
+    let totalLent = 0; let totalBorrowed = 0;
+    let settledLent = 0; let settledBorrowed = 0;
     for (const l of loans) {
       const rem = remaining(l);
-      if (l.type === "lent") lent += rem;
-      else borrowed += rem;
+      const due = totalDue(l);
+      if (l.type === "lent") {
+        lent += rem;
+        totalLent += due;
+        if (l.status === "settled") settledLent += due;
+      } else {
+        borrowed += rem;
+        totalBorrowed += due;
+        if (l.status === "settled") settledBorrowed += due;
+      }
       if (isOverdue(l)) overdue += rem;
     }
-    return { lent, borrowed, overdue };
+    return { lent, borrowed, overdue, totalLent, totalBorrowed, settledLent, settledBorrowed };
   }, [loans]);
 
   const people = useMemo(() => {
@@ -107,11 +129,13 @@ export default function LendingScreen() {
           <View style={s.summaryCol}>
             <Text style={s.summaryLabel}>OWED TO ME</Text>
             <Text style={[s.summaryAmt, { color: colors.success }]}>{formatMoney(totals.lent, currency)}</Text>
+            {totals.settledLent > 0 && <Text style={s.settledHint}>✓ {formatMoney(totals.settledLent, currency)} settled</Text>}
           </View>
           <View style={s.summaryDivider} />
           <View style={s.summaryCol}>
             <Text style={s.summaryLabel}>I OWE</Text>
             <Text style={[s.summaryAmt, { color: colors.error }]}>{formatMoney(totals.borrowed, currency)}</Text>
+            {totals.settledBorrowed > 0 && <Text style={s.settledHint}>✓ {formatMoney(totals.settledBorrowed, currency)} settled</Text>}
           </View>
         </View>
 
@@ -136,22 +160,70 @@ export default function LendingScreen() {
           </View>
         )}
 
-        <View style={s.seg}>
-          <Pressable style={[s.segBtn, tab === "lent" && s.segAct]} onPress={() => { Haptics.selectionAsync(); setTab("lent"); }}>
-            <Text style={[s.segText, tab === "lent" && s.segActText]}>Owed to me</Text>
-          </Pressable>
-          <Pressable style={[s.segBtn, tab === "borrowed" && s.segAct]} onPress={() => { Haptics.selectionAsync(); setTab("borrowed"); }}>
-            <Text style={[s.segText, tab === "borrowed" && s.segActText]}>I owe</Text>
+        <View 
+          style={s.controlRow}
+          onLayout={(e) => {
+            const { y, height } = e.nativeEvent.layout;
+            setFilterDropdownTop(y + height + 8);
+          }}
+        >
+          <View style={s.seg}>
+            <Pressable style={[s.segBtn, tab === "lent" && s.segAct]} onPress={() => { Haptics.selectionAsync(); setTab("lent"); }}>
+              <Text style={[s.segText, tab === "lent" && s.segActText]}>Owed to me</Text>
+            </Pressable>
+            <Pressable style={[s.segBtn, tab === "borrowed" && s.segAct]} onPress={() => { Haptics.selectionAsync(); setTab("borrowed"); }}>
+              <Text style={[s.segText, tab === "borrowed" && s.segActText]}>I owe</Text>
+            </Pressable>
+          </View>
+          
+          <Pressable 
+            onPress={() => {
+              Haptics.selectionAsync();
+              setShowFilters(!showFilters);
+            }}
+            style={[s.filterButton, showFilters && s.filterButtonActive]}
+          >
+            <Ionicons name="filter" size={20} color={filter !== "all" ? colors.brand : colors.onSurface} />
+            {filter !== "all" && (
+              <View style={s.filterBadge} />
+            )}
           </Pressable>
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filterRow}>
-          {FILTERS.map((item) => (
-            <Pressable key={item.key} style={[s.filterChip, filter === item.key && s.filterChipActive]} onPress={() => { Haptics.selectionAsync(); setFilter(item.key); }}>
-              <Text style={[s.filterText, filter === item.key && s.filterTextActive]}>{item.label}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
+        {showFilters && (
+          <View style={[s.filterDropdown, { top: filterDropdownTop || 250 }]}>
+            <View style={s.dropdownHeader}>
+              <Text style={s.dropdownTitle}>Filter status</Text>
+            </View>
+            {FILTERS.map((f, index) => {
+              const isActive = filter === f.key;
+              const count = loans.filter((l) => {
+                if (l.type !== tab) return false;
+                if (f.key === "active") return l.status !== "settled";
+                if (f.key === "overdue") return isOverdue(l);
+                if (f.key === "settled") return l.status === "settled";
+                return true;
+              }).length;
+              
+              return (
+                <Pressable 
+                  key={f.key}
+                  onPress={() => { Haptics.selectionAsync(); setFilter(f.key as LoanFilter); setShowFilters(false); }}
+                  style={[
+                    s.dropdownItem,
+                    index !== FILTERS.length - 1 && s.dropdownItemBorder,
+                    isActive && s.dropdownItemActive,
+                  ]}
+                >
+                  <Text style={[s.dropdownItemText, isActive && s.dropdownItemTextActive]}>
+                    {f.label} ({count})
+                  </Text>
+                  <Ionicons name={isActive ? "checkmark-circle" : "ellipse-outline"} size={20} color={isActive ? colors.brand : colors.muted} />
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
 
         {filtered.length === 0 ? (
           <EmptyState icon="people-outline" title={tab === "lent" ? "No one owes you" : "You owe nothing"} subtitle="Tap + New to add a record" />
@@ -167,6 +239,7 @@ export default function LendingScreen() {
                 <Pressable
                   key={l.id}
                   onPress={() => router.push({ pathname: "/loan-detail", params: { id: l.id, initialLoan: JSON.stringify(l) } })}
+                  onLongPress={() => setDeleteLoanId(l.id)}
                   style={s.card}
                 >
                   <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -202,7 +275,17 @@ export default function LendingScreen() {
           </View>
         )}
       </ScrollView>
-
+      {showFilters && <Pressable style={s.dropdownDismissLayer} onPress={() => setShowFilters(false)} />}
+      
+      <ConfirmModal 
+        visible={!!deleteLoanId}
+        title="Delete loan?"
+        subtitle={`Are you sure you want to delete the record for "${loans.find(l => l.id === deleteLoanId)?.person || "this person"}"? This action cannot be undone.`}
+        confirmText="Delete"
+        isDestructive={true}
+        onCancel={() => setDeleteLoanId(null)}
+        onConfirm={confirmDelete}
+      />
     </View>
   );
 }
@@ -221,6 +304,7 @@ const createStyles = (colors: any) => StyleSheet.create({
   summaryDivider: { width: 1, height: 40, backgroundColor: colors.border },
   summaryLabel: { fontSize: 10, color: colors.muted, fontWeight: "700", letterSpacing: 0.5 },
   summaryAmt: { fontSize: 22, fontWeight: "800", marginTop: 4 },
+  settledHint: { fontSize: 10, color: colors.success, fontWeight: "700", marginTop: 3 },
   overdueBanner: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: spacing.lg, marginTop: 10, padding: 12, borderRadius: radius.md, backgroundColor: colors.warning + "14", borderWidth: 1, borderColor: colors.warning + "33" },
   overdueText: { flex: 1, fontSize: 12, color: colors.onSurface, fontWeight: "800" },
   peopleRow: { flexDirection: "row", gap: 8, marginHorizontal: spacing.lg, marginTop: 12 },
@@ -228,16 +312,26 @@ const createStyles = (colors: any) => StyleSheet.create({
   personName: { fontSize: 11, color: colors.muted, fontWeight: "800" },
   personAmt: { fontSize: 13, fontWeight: "900", marginTop: 2 },
   
-  seg: { flexDirection: "row", marginHorizontal: spacing.lg, marginTop: 20, marginBottom: 16, padding: 3, borderRadius: radius.pill, backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.border },
+  controlRow: { flexDirection: "row", alignItems: "center", marginHorizontal: spacing.lg, marginTop: 20, marginBottom: 16, gap: 12 },
+  seg: { flex: 1, flexDirection: "row", padding: 3, borderRadius: radius.pill, backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.border },
   segBtn: { flex: 1, paddingVertical: 8, borderRadius: radius.pill, alignItems: "center" },
   segAct: { backgroundColor: colors.surfaceSecondary, ...shadow.card },
   segText: { fontSize: 13, fontWeight: "600", color: colors.muted },
   segActText: { color: colors.onSurface, fontWeight: "800" },
-  filterRow: { gap: 8, paddingHorizontal: spacing.lg, paddingBottom: 16 },
-  filterChip: { minWidth: 78, height: 32, paddingHorizontal: 12, borderRadius: radius.pill, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.border },
-  filterChipActive: { backgroundColor: colors.surfaceSecondary, borderColor: colors.brand, ...shadow.card },
-  filterText: { fontSize: 12, color: colors.muted, fontWeight: "700" },
-  filterTextActive: { color: colors.brand, fontWeight: "800" },
+  
+  filterButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surfaceTertiary, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border },
+  filterButtonActive: { backgroundColor: colors.surfaceSecondary, borderColor: colors.brand },
+  filterBadge: { position: "absolute", top: 10, right: 10, width: 8, height: 8, borderRadius: 4, backgroundColor: colors.brand },
+  
+  filterDropdown: { position: "absolute", right: spacing.lg, width: 220, backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, ...shadow.card, zIndex: 100 },
+  dropdownHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
+  dropdownTitle: { fontSize: 14, fontWeight: "800", color: colors.onSurface },
+  dropdownItem: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 16 },
+  dropdownItemBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  dropdownItemActive: { backgroundColor: colors.brand + "0A" },
+  dropdownItemText: { fontSize: 15, fontWeight: "600", color: colors.onSurface },
+  dropdownItemTextActive: { color: colors.brand, fontWeight: "800" },
+  dropdownDismissLayer: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 90 },
   
   card: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 14, borderWidth: 1, borderColor: colors.border },
   icon: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center" },

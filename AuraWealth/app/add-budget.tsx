@@ -266,7 +266,7 @@ export default function AddBudgetScreen() {
         </View>
       </KeyboardAvoidingView>
 
-      <Modal visible={showNewCat} transparent animationType="slide" onRequestClose={() => setShowNewCat(false)}>
+      <Modal visible={showNewCat} transparent animationType="fade" onRequestClose={() => setShowNewCat(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={s.modalRoot}>
           <BlurView
             intensity={45}

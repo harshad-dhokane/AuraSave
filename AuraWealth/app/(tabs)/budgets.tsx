@@ -11,9 +11,10 @@ import { BlurView } from "expo-blur";
 import { radius, spacing, shadow } from "@/src/theme";
 import { formatMoney, currentMonthKey, monthLabel } from "@/src/utils/format";
 import {
-  getTransactions, getCategories, getBudgets, upsertBudget,
+  getTransactions, getCategories, getBudgets, upsertBudget, deleteBudget,
   Transaction, Category, Budget
 } from "@/src/store";
+import { ConfirmModal } from "@/src/components/ConfirmModal";
 import { CategoryIcon, EmptyState } from "@/src/components/CategoryIcon";
 import { useCurrency } from "@/src/currency";
 import { useTabBarScroll } from "@/src/context/TabBarScrollContext";
@@ -72,6 +73,7 @@ export default function BudgetsScreen() {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [modal, setModal] = useState<ModalState>({ kind: "none" });
   const [selectedMonth, setSelectedMonth] = useState(currentMonthKey());
+  const [deleteBudgetId, setDeleteBudgetId] = useState<string | null>(null);
   const blurTint = isDark ? "systemUltraThinMaterialDark" : "systemUltraThinMaterialLight";
 
   const shiftMonth = (offset: number) => {
@@ -79,6 +81,14 @@ export default function BudgetsScreen() {
     const [year, month] = selectedMonth.split("-").map(Number);
     const date = new Date(year, month - 1 + offset, 1);
     setSelectedMonth(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteBudgetId) return;
+    await deleteBudget(deleteBudgetId);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    setDeleteBudgetId(null);
+    load();
   };
 
   const load = useCallback(async () => {
@@ -214,7 +224,7 @@ export default function BudgetsScreen() {
                 <Pressable
                   key={b.id}
                   onPress={() => openDetail(b, c, spent)}
-                  onLongPress={() => openAdd(b.categoryId)}
+                  onLongPress={() => { Haptics.selectionAsync(); setDeleteBudgetId(b.id); }}
                   style={s.budgetCard}
                 >
                   <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -250,7 +260,7 @@ export default function BudgetsScreen() {
       </ScrollView>
 
       {/* Modals */}
-      <Modal transparent visible={modal.kind !== "none"} animationType="slide" onRequestClose={close}>
+      <Modal transparent visible={modal.kind !== "none"} animationType="fade" onRequestClose={close}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1, backgroundColor: "transparent", justifyContent: "flex-end" }}>
           <BlurView
             intensity={45}
@@ -293,6 +303,15 @@ export default function BudgetsScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+      <ConfirmModal 
+        visible={!!deleteBudgetId}
+        title="Delete budget?"
+        subtitle={`Are you sure you want to delete the budget for "${cats.find(c => c.id === budgets.find(b => b.id === deleteBudgetId)?.categoryId)?.name || "Uncategorized"}"? This action cannot be undone.`}
+        confirmText="Delete"
+        isDestructive={true}
+        onCancel={() => setDeleteBudgetId(null)}
+        onConfirm={confirmDelete}
+      />
     </View>
   );
 }

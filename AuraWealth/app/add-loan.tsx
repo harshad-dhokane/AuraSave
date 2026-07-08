@@ -10,7 +10,7 @@ import * as Haptics from "expo-haptics";
 import { DatePickerModal } from "@/src/components/DatePicker";
 import { radius, spacing, shadow } from "@/src/theme";
 import { useCurrency } from "@/src/currency";
-import { addLoan, addTransaction, getCategories } from "@/src/store";
+import { addLoan, addTransaction, getCategories, addCategory } from "@/src/store";
 import { formatDate } from "@/src/utils/format";
 import { useTheme } from "@/src/theme/ThemeContext";
 
@@ -47,14 +47,40 @@ export default function AddLoanScreen() {
     if (!repaymentExpected) {
       const cats = await getCategories();
       const targetType = type === "lent" ? "expense" : "income";
-      const fallbackCat = cats.find(c => c.type === targetType);
+      // Look for an existing Gift/Charity category first
+      const giftCat = cats.find(c => c.type === targetType && /gift|charity|donation/i.test(c.name));
+      let categoryId: string;
+      if (giftCat) {
+        categoryId = giftCat.id;
+      } else {
+        // Auto-create a "Gift" category so gifts never end up in Rent
+        const created = await addCategory({
+          name: "Gift",
+          icon: "gift",
+          color: "#E8A0BF",
+          type: targetType,
+        });
+        categoryId = created.id;
+      }
       
+      // Create the transaction for expense/income tracking
       await addTransaction({
         amount: Number(amount),
         date: date.toISOString(),
         type: targetType,
-        categoryId: fallbackCat?.id || "",
+        categoryId,
         note: (type === "lent" ? "Gift to " : "Gift from ") + person.trim() + (notes ? ` - ${notes.trim()}` : "") + (groupName ? ` (${groupName.trim()})` : ""),
+      });
+
+      // Also create a loan record so it appears on the Lending page
+      await addLoan({
+        type,
+        person: person.trim(),
+        amount: Number(amount),
+        date: date.toISOString(),
+        repaymentExpected: false,
+        notes: (notes.trim() ? notes.trim() + " — " : "") + "Gift / No repayment",
+        groupName: groupName.trim() || undefined,
       });
     } else {
       await addLoan({

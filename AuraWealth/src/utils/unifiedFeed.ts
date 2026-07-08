@@ -60,6 +60,9 @@ export function buildUnifiedFeed(
 
   // 3. Map Loans
   for (const l of loans) {
+    // Skip gifts since they are already mapped as transactions
+    if (l.repaymentExpected === false) continue;
+    
     records.push({
       id: l.id,
       type: l.type as "lent" | "borrowed",

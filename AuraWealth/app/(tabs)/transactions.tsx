@@ -15,6 +15,7 @@ import * as Haptics from "expo-haptics";
 
 import { radius, spacing, shadow } from "@/src/theme";
 import { formatDayLabel, formatMoney } from "@/src/utils/format";
+import { ConfirmModal } from "@/src/components/ConfirmModal";
 import {
   getTransactions,
   getCategories,
@@ -62,6 +63,8 @@ export default function TransactionsScreen() {
   const [loans, setLoans] = useState<Loan[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [q, setQ] = useState("");
+  const [deleteItem, setDeleteItem] = useState<UnifiedRecord | null>(null);
+  const [infoItem, setInfoItem] = useState<UnifiedRecord | null>(null);
 
   const load = useCallback(async () => {
     const [t, c, gc, l, g] = await Promise.all([getTransactions(), getCategories(), getGoalContributions(), getLoans(), getGoals()]);
@@ -111,21 +114,18 @@ export default function TransactionsScreen() {
 
   const handleDelete = (item: UnifiedRecord) => {
     if (item.type === "saved" || item.type === "lent" || item.type === "borrowed") {
-      Alert.alert("Cannot delete from Ledger", "Please go to the Goals or Lending page to manage this record to ensure balances are properly calculated.");
+      setInfoItem(item);
       return;
     }
-    Alert.alert("Delete transaction?", "This action cannot be undone.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          await deleteTransaction(item.id);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-          load();
-        },
-      },
-    ]);
+    setDeleteItem(item);
+  };
+  
+  const confirmDelete = async () => {
+    if (!deleteItem) return;
+    await deleteTransaction(deleteItem.id);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    setDeleteItem(null);
+    load();
   };
 
   const toggleFilter = (key: string) => {
@@ -307,6 +307,27 @@ export default function TransactionsScreen() {
           )}
         />
       )}
+
+      {showFilters && <Pressable style={styles.dropdownDismissLayer} onPress={() => setShowFilters(false)} />}
+      
+      <ConfirmModal 
+        visible={!!deleteItem}
+        title="Delete transaction?"
+        subtitle={`Are you sure you want to delete "${(deleteItem?.subtitle && deleteItem.subtitle !== "Transaction" ? deleteItem.subtitle : deleteItem?.title) || "this transaction"}"? This cannot be undone.`}
+        confirmText="Delete"
+        isDestructive={true}
+        onCancel={() => setDeleteItem(null)}
+        onConfirm={confirmDelete}
+      />
+      
+      <ConfirmModal 
+        visible={!!infoItem}
+        title="Cannot delete from Ledger"
+        subtitle="Please go to the Goals or Lending page to manage this record to ensure balances are properly calculated."
+        confirmText="OK"
+        onCancel={() => setInfoItem(null)}
+        onConfirm={() => setInfoItem(null)}
+      />
     </View>
   );
 }
@@ -400,8 +421,7 @@ const createStyles = (colors: any) => StyleSheet.create({
   filterDropdown: {
     position: "absolute",
     right: spacing.lg,
-    width: 284,
-    maxWidth: "100%",
+    width: 200,
     padding: 8,
     borderRadius: radius.md,
     backgroundColor: colors.surfaceSecondary,

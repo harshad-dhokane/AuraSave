@@ -14,6 +14,7 @@ import {
   getGoals, addGoal, updateGoal, deleteGoal,
   addGoalContribution, Goal,
 } from "@/src/store";
+import { ConfirmModal } from "@/src/components/ConfirmModal";
 import { EmptyState } from "@/src/components/CategoryIcon";
 import { useCurrency } from "@/src/currency";
 import { useTabBarScroll } from "@/src/context/TabBarScrollContext";
@@ -75,7 +76,7 @@ function healthLabel(goal: Goal) {
 }
 
 export default function GoalsTab() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const s = useMemo(() => createStyles(colors), [colors]);
 
   const insets = useSafeAreaInsets();
@@ -95,6 +96,7 @@ export default function GoalsTab() {
     autoDay: "1",
   });
   const [contribution, setContribution] = useState("");
+  const [deleteGoalId, setDeleteGoalId] = useState<string | null>(null);
 
   const load = useCallback(async () => { setGoals(await getGoals()); }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -157,10 +159,16 @@ export default function GoalsTab() {
   };
 
   const removeGoal = (id: string) => {
-    Alert.alert("Delete goal?", "This cannot be undone.", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: async () => { await deleteGoal(id); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); close(); load(); } },
-    ]);
+    setDeleteGoalId(id);
+  };
+  
+  const confirmDelete = async () => {
+    if (!deleteGoalId) return;
+    await deleteGoal(deleteGoalId);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    setDeleteGoalId(null);
+    close();
+    load();
   };
 
   const filtered = useMemo(() => goals.filter((g) => {
@@ -246,9 +254,17 @@ export default function GoalsTab() {
       </ScrollView>
 
       {/* ─── Modals ─── */}
-      <Modal transparent visible={modal.kind !== "none"} animationType="slide" onRequestClose={close}>
+      <Modal transparent visible={modal.kind !== "none"} animationType="fade" onRequestClose={close}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, justifyContent: "flex-end" }}>
-          <BlurView intensity={60} tint="default" style={StyleSheet.absoluteFill}><Pressable style={{ flex: 1 }} onPress={close} /></BlurView>
+          <BlurView 
+            intensity={45} 
+            tint={isDark ? "systemUltraThinMaterialDark" : "systemUltraThinMaterialLight"} 
+            blurReductionFactor={2}
+            experimentalBlurMethod="dimezisBlurView"
+            style={StyleSheet.absoluteFill}
+          >
+            <Pressable style={{ flex: 1 }} onPress={close} />
+          </BlurView>
           <View style={[s.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
             <View style={s.handle} />
 
@@ -310,6 +326,16 @@ export default function GoalsTab() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <ConfirmModal 
+        visible={!!deleteGoalId}
+        title="Delete goal?"
+        subtitle={`Are you sure you want to delete "${goals.find(g => g.id === deleteGoalId)?.title || "this goal"}"? This action cannot be undone.`}
+        confirmText="Delete"
+        isDestructive={true}
+        onCancel={() => setDeleteGoalId(null)}
+        onConfirm={confirmDelete}
+      />
     </View>
   );
 }

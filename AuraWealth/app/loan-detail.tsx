@@ -8,7 +8,7 @@ import * as Haptics from "expo-haptics";
 
 import { radius, spacing } from "@/src/theme";
 import { formatMoney, formatDate } from "@/src/utils/format";
-import { getLoans, getLoanPayments, Loan, LoanPayment, addLoanPayment, updateLoan, deleteLoan, addTransaction, getCategories } from "@/src/store";
+import { getLoans, getLoanPayments, Loan, LoanPayment, addLoanPayment, updateLoan, deleteLoan, addTransaction, getCategories, addCategory } from "@/src/store";
 import { useCurrency } from "@/src/currency";
 import { useTheme } from "@/src/theme/ThemeContext";
 
@@ -155,12 +155,24 @@ export default function LoanDetailScreen() {
           onPress: async () => {
             const cats = await getCategories();
             const targetType = loan.type === "lent" ? "expense" : "income";
-            const fallbackCat = cats.find((c) => c.type === targetType);
+            const giftCat = cats.find(c => c.type === targetType && /gift|charity|donation/i.test(c.name));
+            let categoryId = "";
+            if (giftCat) {
+              categoryId = giftCat.id;
+            } else {
+              const created = await addCategory({
+                name: "Gift",
+                icon: "gift",
+                color: "#E8A0BF",
+                type: targetType,
+              });
+              categoryId = created.id;
+            }
             if (rem > 0) {
               await addTransaction({
                 amount: rem,
                 type: targetType,
-                categoryId: fallbackCat?.id || "",
+                categoryId,
                 date: new Date().toISOString(),
                 note: `${loan.type === "lent" ? "Gift to" : "Gift from"} ${loan.person}`,
               });
