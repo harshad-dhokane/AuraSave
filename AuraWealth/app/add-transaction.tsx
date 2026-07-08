@@ -42,7 +42,7 @@ export default function AddTransaction() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { currency } = useCurrency();
-  const params = useLocalSearchParams<{ type?: string; mode?: string }>();
+  const params = useLocalSearchParams<{ type?: string; mode?: string; amount?: string; note?: string; categoryId?: string; date?: string }>();
 
   const [mode, setMode] = useState<"manual" | "sms">(params.mode === "sms" ? "sms" : "manual");
   const [smsText, setSmsText] = useState("");
@@ -52,15 +52,15 @@ export default function AddTransaction() {
   }>(null);
 
   const [type, setType] = useState<TxType>((params.type as TxType) || "expense");
-  const [amount, setAmount] = useState("");
-  const [note, setNote] = useState("");
-  const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [amount, setAmount] = useState(params.amount || "");
+  const [note, setNote] = useState(params.note || "");
+  const [categoryId, setCategoryId] = useState<string | null>(params.categoryId || null);
   // When true, the type-change effect will NOT auto-pick a category. Set after
   // an SMS parse that failed to detect a category so the user is forced to
   // choose one explicitly.
   const [mustChooseCategory, setMustChooseCategory] = useState(false);
   const [cats, setCats] = useState<Category[]>([]);
-  const [date, setDate] = useState(new Date());
+  const [date, setDate] = useState(params.date ? new Date(params.date) : new Date());
   const [pickingDate, setPickingDate] = useState(false);
   const [saving, setSaving] = useState(false);
   

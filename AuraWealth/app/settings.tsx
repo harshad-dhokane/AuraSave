@@ -276,7 +276,7 @@ export default function Settings() {
       </ScrollView>
 
       {/* Name modal */}
-      <Modal transparent visible={editing} animationType="fade" onRequestClose={() => setEditing(false)}>
+      <Modal statusBarTranslucent navigationBarTranslucent transparent visible={editing} animationType="fade" onRequestClose={() => setEditing(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1, backgroundColor: "transparent", justifyContent: "center", padding: 24 }}>
           <BlurView
             intensity={BLUR_INTENSITY}
@@ -316,7 +316,7 @@ export default function Settings() {
       </Modal>
 
       {/* Theme Modal */}
-      <Modal transparent visible={pickingTheme} animationType="fade" onRequestClose={() => setPickingTheme(false)}>
+      <Modal statusBarTranslucent navigationBarTranslucent transparent visible={pickingTheme} animationType="fade" onRequestClose={() => setPickingTheme(false)}>
         <View style={{ flex: 1, backgroundColor: "transparent", justifyContent: "flex-end" }}>
           <BlurView
             intensity={BLUR_INTENSITY}
@@ -364,7 +364,7 @@ export default function Settings() {
       </Modal>
 
       {/* Currency Modal */}
-      <Modal transparent visible={pickingCurrency} animationType="fade" onRequestClose={() => setPickingCurrency(false)}>
+      <Modal statusBarTranslucent navigationBarTranslucent transparent visible={pickingCurrency} animationType="fade" onRequestClose={() => setPickingCurrency(false)}>
         <View style={{ flex: 1, backgroundColor: "transparent", justifyContent: "flex-end" }}>
           <BlurView
             intensity={BLUR_INTENSITY}
@@ -415,7 +415,7 @@ export default function Settings() {
       </Modal>
 
       {/* PIN Setup Modal */}
-      <Modal transparent visible={settingPin} animationType="slide" onRequestClose={() => setSettingPin(false)}>
+      <Modal statusBarTranslucent navigationBarTranslucent transparent visible={settingPin} animationType="slide" onRequestClose={() => setSettingPin(false)}>
         <View style={{ flex: 1, backgroundColor: colors.surface }}>
           <View style={[styles.header, { paddingTop: insets.top + 6, paddingBottom: 0 }]}>
             <View style={{ width: 40 }} />

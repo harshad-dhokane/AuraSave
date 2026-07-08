@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { radius, spacing } from "@/src/theme";
 import { useCurrency } from "@/src/currency";
@@ -35,11 +35,12 @@ export default function AddGoalScreen() {
 
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const params = useLocalSearchParams<{ title?: string; target?: string; saved?: string }>();
   const { currency } = useCurrency();
 
-  const [title, setTitle] = useState("");
-  const [target, setTarget] = useState("");
-  const [saved, setSaved] = useState("");
+  const [title, setTitle] = useState(params.title || "");
+  const [target, setTarget] = useState(params.target ? String(params.target) : "");
+  const [saved, setSaved] = useState(params.saved ? String(params.saved) : "");
   const [period, setPeriod] = useState(PERIODS[2]);
   const [priority, setPriority] = useState<"low" | "medium" | "high">("medium");
   const [autoContribution, setAutoContribution] = useState("");

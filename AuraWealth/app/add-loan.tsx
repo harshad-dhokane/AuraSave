@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { DatePickerModal } from "@/src/components/DatePicker";
 import { radius, spacing, shadow } from "@/src/theme";
@@ -20,16 +20,17 @@ export default function AddLoanScreen() {
 
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const params = useLocalSearchParams<{ type?: string; person?: string; amount?: string; repaymentExpected?: string }>();
   const { currency } = useCurrency();
 
-  const [type, setType] = useState<"lent" | "borrowed">("lent");
-  const [person, setPerson] = useState("");
-  const [amount, setAmount] = useState("");
+  const [type, setType] = useState<"lent" | "borrowed">((params.type as any) || "lent");
+  const [person, setPerson] = useState(params.person || "");
+  const [amount, setAmount] = useState(params.amount || "");
   const [notes, setNotes] = useState("");
   const [interestRate, setInterestRate] = useState("");
   const [proofNote, setProofNote] = useState("");
   const [groupName, setGroupName] = useState("");
-  const [repaymentExpected, setRepaymentExpected] = useState(true);
+  const [repaymentExpected, setRepaymentExpected] = useState(params.repaymentExpected !== "false");
   
   const [date, setDate] = useState(new Date());
   const [dueDate, setDueDate] = useState<Date | null>(null);

@@ -43,13 +43,13 @@ export default function AddBudgetScreen() {
 
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const params = useLocalSearchParams<{ month?: string; categoryId?: string }>();
+  const params = useLocalSearchParams<{ month?: string; categoryId?: string; limit?: string }>();
   const { currency } = useCurrency();
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [txs, setTxs] = useState<Transaction[]>([]);
   const [selectedCat, setSelectedCat] = useState<string>("");
-  const [limit, setLimit] = useState("");
+  const [limit, setLimit] = useState(params.limit || "");
   const [kind, setKind] = useState<"fixed" | "flexible">("flexible");
   const [rolloverEnabled, setRolloverEnabled] = useState(false);
   const [alertPercent, setAlertPercent] = useState(80);

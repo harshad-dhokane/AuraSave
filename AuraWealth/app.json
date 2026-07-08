@@ -46,6 +46,12 @@
         {
           "faceIDPermission": "Allow Aura Wealth to use Face ID to unlock the app securely."
         }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Allow Aura Wealth to access your microphone to record voice commands."
+        }
       ]
     ],
     "experiments": {
