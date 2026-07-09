@@ -120,9 +120,13 @@ async function getUserId(): Promise<string> {
 }
 
 // Clear cache on auth state change (sign-out / sign-in)
-supabase.auth.onAuthStateChange((_event, session) => {
-  _cachedUserId = session?.user?.id ?? null;
-});
+try {
+  supabase.auth.onAuthStateChange((_event, session) => {
+    _cachedUserId = session?.user?.id ?? null;
+  });
+} catch (e) {
+  console.warn("[AuraWealth] Failed to register auth state listener:", e);
+}
 
 // ─── Transactions ───────────────────────────────────────────────────────────
 export async function getTransactions(): Promise<Transaction[]> {
@@ -165,6 +169,19 @@ export async function addTransaction(tx: Omit<Transaction, "id" | "createdAt">):
 
 export async function deleteTransaction(id: string): Promise<void> {
   const { error } = await supabase.from("transactions").delete().eq("id", id);
+  if (error) throw error;
+  clearCache();
+}
+
+export async function updateTransaction(id: string, patch: Partial<Omit<Transaction, "id" | "createdAt">>): Promise<void> {
+  const userId = await getUserId();
+  const update: any = { user_id: userId };
+  if (patch.type !== undefined) update.type = patch.type;
+  if (patch.amount !== undefined) update.amount = patch.amount;
+  if (patch.categoryId !== undefined) update.category_id = patch.categoryId;
+  if (patch.note !== undefined) update.note = patch.note || null;
+  if (patch.date !== undefined) update.date = patch.date;
+  const { error } = await supabase.from("transactions").update(update).eq("id", id);
   if (error) throw error;
   clearCache();
 }
@@ -278,12 +295,12 @@ export async function upsertBudget(b: Omit<Budget, "id"> & { id?: string }): Pro
   if (existing) {
     let { error } = await supabase
       .from("budgets")
-      .update(updatePayload)
+      .update({ ...updatePayload, user_id: userId })
       .eq("id", existing.id);
     if (error && isMissingDbShape(error)) {
       const fallback = await supabase
         .from("budgets")
-        .update({ limit: b.limit })
+        .update({ limit: updatePayload.limit, user_id: userId })
         .eq("id", existing.id);
       error = fallback.error;
     }
@@ -426,12 +443,13 @@ export async function addGoal(g: Omit<Goal, "id" | "createdAt">): Promise<Goal> 
 }
 
 export async function updateGoal(id: string, patch: Partial<Goal>): Promise<void> {
-  const updates: any = {};
+  const userId = await getUserId();
+  const updates: any = { user_id: userId };
   if (patch.title !== undefined) updates.title = patch.title;
   if (patch.target !== undefined) updates.target = patch.target;
   if (patch.saved !== undefined) updates.saved = patch.saved;
-  if (patch.deadline !== undefined) updates.deadline = patch.deadline;
-  if (patch.period !== undefined) updates.period = patch.period;
+  if (patch.deadline !== undefined) updates.deadline = patch.deadline || null;
+  if (patch.period !== undefined) updates.period = patch.period || null;
   if (patch.status !== undefined) updates.status = patch.status;
   if (patch.priority !== undefined) updates.priority = patch.priority;
   if (patch.isPaused !== undefined) updates.is_paused = patch.isPaused;
@@ -467,7 +485,7 @@ export interface GoalContribution {
 }
 
 export async function getGoalContributions(goalId?: string): Promise<GoalContribution[]> {
-  return withCache('gc', async () => {
+  return withCache(`gc_${goalId || 'all'}`, async () => {
   let query = supabase
       .from("goal_contributions")
       .select("id, goal_id, amount, created_at")
@@ -500,6 +518,36 @@ export async function addGoalContribution(goalId: string, amount: number): Promi
   if (error) throw error;
   clearCache();
   return { id, goalId, amount, createdAt: new Date().toISOString() };
+}
+
+export async function updateGoalContribution(contributionId: string, goalId: string, oldAmount: number, newAmount: number): Promise<void> {
+  const userId = await getUserId();
+  const { error } = await supabase.from("goal_contributions").update({ amount: newAmount, user_id: userId }).eq("id", contributionId);
+  if (error) throw error;
+  
+  // Update the goal's saved total
+  const goals = await getGoals();
+  const goal = goals.find(g => g.id === goalId);
+  if (goal) {
+    const newSaved = Math.max(0, goal.saved - oldAmount + newAmount);
+    const newStatus = newSaved >= goal.target ? "completed" : "pending";
+    await updateGoal(goalId, { saved: newSaved, status: newStatus });
+  }
+  clearCache();
+}
+
+export async function deleteGoalContribution(contributionId: string, goalId: string, amount: number): Promise<void> {
+  const { error } = await supabase.from("goal_contributions").delete().eq("id", contributionId);
+  if (error) throw error;
+  // Subtract the amount from the goal's saved total
+  const goals = await getGoals();
+  const goal = goals.find(g => g.id === goalId);
+  if (goal) {
+    const newSaved = Math.max(0, goal.saved - amount);
+    const newStatus = newSaved >= goal.target ? "completed" : "pending";
+    await updateGoal(goalId, { saved: newSaved, status: newStatus });
+  }
+  clearCache();
 }
 
 // ─── Loans ──────────────────────────────────────────────────────────────────
@@ -649,7 +697,8 @@ export async function addLoan(l: Omit<Loan, "id" | "createdAt" | "paidAmount" | 
 }
 
 export async function updateLoan(id: string, patch: Partial<Loan>): Promise<void> {
-  const updates: any = {};
+  const userId = await getUserId();
+  const updates: any = { user_id: userId };
   if (patch.type !== undefined) updates.type = patch.type;
   if (patch.person !== undefined) updates.person = patch.person;
   if (patch.amount !== undefined) updates.amount = patch.amount;
@@ -742,6 +791,41 @@ export async function addLoanPayment(loanId: string, amount: number, date: strin
   if (error) throw error;
   clearCache();
   return { id, loanId, amount, date, note, createdAt: new Date().toISOString() };
+}
+
+export async function updateLoanPayment(paymentId: string, loanId: string, oldAmount: number, newAmount: number, patch: Partial<LoanPayment>): Promise<void> {
+  const userId = await getUserId();
+  const updates: any = { user_id: userId };
+  if (patch.amount !== undefined) updates.amount = patch.amount;
+  if (patch.note !== undefined) updates.note = patch.note || null;
+
+  const { error } = await supabase.from("loan_payments").update(updates).eq("id", paymentId);
+  if (error) throw error;
+
+  // Update the loan's paid_amount
+  if (oldAmount !== newAmount) {
+    const loans = await getLoans();
+    const loan = loans.find(l => l.id === loanId);
+    if (loan) {
+      const newPaid = Math.max(0, loan.paidAmount - oldAmount + newAmount);
+      await updateLoan(loanId, { paidAmount: newPaid });
+    }
+  }
+  clearCache();
+}
+
+export async function deleteLoanPayment(paymentId: string, loanId: string, amount: number): Promise<void> {
+  const { error } = await supabase.from("loan_payments").delete().eq("id", paymentId);
+  if (error) throw error;
+  
+  // Update the loan's paid_amount
+  const loans = await getLoans();
+  const loan = loans.find(l => l.id === loanId);
+  if (loan) {
+    const newPaid = Math.max(0, loan.paidAmount - amount);
+    await updateLoan(loanId, { paidAmount: newPaid });
+  }
+  clearCache();
 }
 
 // ─── Profile ────────────────────────────────────────────────────────────────

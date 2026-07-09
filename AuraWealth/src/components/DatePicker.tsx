@@ -70,8 +70,8 @@ export function DatePickerModal({
         <BlurView
           intensity={BLUR_INTENSITY}
           tint={blurTint}
-          blurReductionFactor={2}
-          experimentalBlurMethod="dimezisBlurView"
+          blurReductionFactor={2} experimentalBlurMethod="dimezisBlurView"
+         
           style={StyleSheet.absoluteFill}
         >
           <Pressable style={{ flex: 1 }} onPress={onClose} />
@@ -174,8 +174,8 @@ export function RangePickerModal({
         <BlurView
           intensity={BLUR_INTENSITY}
           tint={blurTint}
-          blurReductionFactor={2}
-          experimentalBlurMethod="dimezisBlurView"
+          blurReductionFactor={2} experimentalBlurMethod="dimezisBlurView"
+         
           style={StyleSheet.absoluteFill}
         >
           <Pressable style={{ flex: 1 }} onPress={onClose} />

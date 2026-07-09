@@ -8,9 +8,11 @@ import * as Haptics from "expo-haptics";
 
 import { radius, spacing } from "@/src/theme";
 import { formatMoney, formatDate } from "@/src/utils/format";
-import { getLoans, getLoanPayments, Loan, LoanPayment, addLoanPayment, updateLoan, deleteLoan, addTransaction, getCategories, addCategory } from "@/src/store";
+import { getLoans, getLoanPayments, Loan, LoanPayment, addLoanPayment, updateLoanPayment, deleteLoanPayment, updateLoan, deleteLoan, addTransaction, getCategories, addCategory } from "@/src/store";
 import { useCurrency } from "@/src/currency";
 import { useTheme } from "@/src/theme/ThemeContext";
+import { ActionModal } from "@/src/components/ActionModal";
+import { ConfirmModal } from "@/src/components/ConfirmModal";
 
 function totalDue(loan: Loan) {
   return loan.amount + loan.amount * ((loan.interestRate || 0) / 100);
@@ -43,6 +45,14 @@ export default function LoanDetailScreen() {
   const [repayNote, setRepayNote] = useState("");
   const [proofModalVisible, setProofModalVisible] = useState(false);
   const [proofNote, setProofNote] = useState(loan?.proofNote || "");
+  const [actionPayment, setActionPayment] = useState<LoanPayment | null>(null);
+  const [deletePayment, setDeletePayment] = useState<LoanPayment | null>(null);
+  
+  // Edit payment modal state
+  const [editPaymentModal, setEditPaymentModal] = useState(false);
+  const [editPaymentAmount, setEditPaymentAmount] = useState("");
+  const [editPaymentNote, setEditPaymentNote] = useState("");
+
   const blurTint = isDark ? "systemUltraThinMaterialDark" : "systemUltraThinMaterialLight";
 
   useEffect(() => {
@@ -98,6 +108,36 @@ export default function LoanDetailScreen() {
     
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     closeRepay();
+    load();
+  };
+
+  const openEditPayment = (p: LoanPayment) => {
+    setEditPaymentAmount(String(p.amount));
+    setEditPaymentNote(p.note || "");
+    setEditPaymentModal(true);
+  };
+
+  const submitEditPayment = async () => {
+    if (!actionPayment || !loan) return;
+    const newAmt = Number(editPaymentAmount);
+    if (!newAmt || newAmt <= 0) return;
+    
+    await updateLoanPayment(actionPayment.id, loan.id, actionPayment.amount, newAmt, {
+      amount: newAmt,
+      note: editPaymentNote.trim() || undefined,
+    });
+    
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setEditPaymentModal(false);
+    setActionPayment(null);
+    load();
+  };
+
+  const confirmDeletePayment = async () => {
+    if (!deletePayment || !loan) return;
+    await deleteLoanPayment(deletePayment.id, loan.id, deletePayment.amount);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    setDeletePayment(null);
     load();
   };
 
@@ -223,6 +263,9 @@ export default function LoanDetailScreen() {
             <Ionicons name="arrow-back" size={24} color={colors.onSurface} />
           </Pressable>
           <Text style={s.title} numberOfLines={1}>{loan.person}</Text>
+          <Pressable onPress={() => router.push({ pathname: "/add-loan", params: { editId: loan.id, type: loan.type, person: loan.person, amount: String(loan.amount), repaymentExpected: String(loan.repaymentExpected), note: loan.notes || "", date: loan.date, dueDate: loan.dueDate || "", interestRate: loan.interestRate ? String(loan.interestRate) : "", groupName: loan.groupName || "" } })} hitSlop={10} style={{ padding: 8, backgroundColor: colors.surfaceSecondary, borderRadius: 12 }}>
+            <Ionicons name="pencil" size={16} color={colors.onSurface} />
+          </Pressable>
         </View>
       </View>
 
@@ -318,14 +361,19 @@ export default function LoanDetailScreen() {
           <Text style={{ fontSize: 13, color: colors.muted, paddingVertical: 20, textAlign: "center" }}>No payments recorded yet</Text>
         ) : (
           <View style={{ marginTop: 8 }}>
-            {payments.map(item => (
-              <View key={item.id} style={s.historyRow}>
+            {payments.map((item, i) => (
+              <Pressable 
+                key={item.id} 
+                onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setActionPayment(item); }}
+                delayLongPress={350}
+                style={[s.historyRow, i === payments.length - 1 && { borderBottomWidth: 0 }]}
+              >
                 <Ionicons name={loan.type === "lent" ? "arrow-down-circle" : "arrow-up-circle"} size={20} color={loan.type === "lent" ? colors.success : colors.error} />
                 <View style={{ flex: 1, marginLeft: 12 }}>
                   <Text style={s.historyAmt}>{formatMoney(item.amount, currency)}</Text>
                   <Text style={s.historyDate}>{formatDate(item.date)}{item.note ? ` · ${item.note}` : ""}</Text>
                 </View>
-              </View>
+              </Pressable>
             ))}
           </View>
         )}
@@ -337,10 +385,10 @@ export default function LoanDetailScreen() {
       </ScrollView>
 
       {/* Repay Modal */}
-      <Modal transparent visible={repayModalVisible} animationType="fade" onRequestClose={closeRepay}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1, backgroundColor: "transparent", justifyContent: "center", padding: 20 }}>
+      <Modal transparent visible={repayModalVisible} animationType="slide" onRequestClose={closeRepay}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1, backgroundColor: "transparent", justifyContent: "flex-end" }}>
           <BlurView intensity={45} tint={blurTint} blurReductionFactor={2} experimentalBlurMethod="dimezisBlurView" style={StyleSheet.absoluteFill}><Pressable style={{ flex: 1 }} onPress={closeRepay} /></BlurView>
-          <View style={{ backgroundColor: colors.surface, padding: 24, borderRadius: 24 }}>
+          <View style={{ backgroundColor: colors.surface, padding: 24, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: insets.bottom + 24 }}>
             <Text style={{ fontSize: 18, fontWeight: "800", color: colors.onSurface, marginBottom: 16 }}>
               {loan.type === "lent" ? "Record Repayment" : "Record Payment"}
             </Text>
@@ -374,10 +422,10 @@ export default function LoanDetailScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      <Modal transparent visible={proofModalVisible} animationType="fade" onRequestClose={() => setProofModalVisible(false)}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1, backgroundColor: "transparent", justifyContent: "center", padding: 20 }}>
+      <Modal transparent visible={proofModalVisible} animationType="slide" onRequestClose={() => setProofModalVisible(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1, backgroundColor: "transparent", justifyContent: "flex-end" }}>
           <BlurView intensity={45} tint={blurTint} blurReductionFactor={2} experimentalBlurMethod="dimezisBlurView" style={StyleSheet.absoluteFill}><Pressable style={{ flex: 1 }} onPress={() => setProofModalVisible(false)} /></BlurView>
-          <View style={{ backgroundColor: colors.surface, padding: 24, borderRadius: 24 }}>
+          <View style={{ backgroundColor: colors.surface, padding: 24, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: insets.bottom + 24 }}>
             <Text style={{ fontSize: 18, fontWeight: "800", color: colors.onSurface, marginBottom: 16 }}>Proof / Reference</Text>
             <TextInput
               style={{ backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, padding: 14, borderRadius: radius.md, fontSize: 15, fontWeight: "600", color: colors.onSurface, minHeight: 92, textAlignVertical: "top" }}
@@ -398,6 +446,77 @@ export default function LoanDetailScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <Modal transparent visible={editPaymentModal} animationType="slide" onRequestClose={() => { setEditPaymentModal(false); setActionPayment(null); }}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1, backgroundColor: "transparent", justifyContent: "flex-end" }}>
+          <BlurView intensity={45} tint={blurTint} blurReductionFactor={2} experimentalBlurMethod="dimezisBlurView" style={StyleSheet.absoluteFill}><Pressable style={{ flex: 1 }} onPress={() => { setEditPaymentModal(false); setActionPayment(null); }} /></BlurView>
+          <View style={{ backgroundColor: colors.surface, padding: 24, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: insets.bottom + 24 }}>
+            <Text style={{ fontSize: 18, fontWeight: "800", color: colors.onSurface, marginBottom: 16 }}>Edit Payment</Text>
+            <Text style={{ fontSize: 12, color: colors.muted, marginBottom: 8, fontWeight: "700" }}>AMOUNT</Text>
+            <TextInput
+              style={{ backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, padding: 16, borderRadius: radius.md, fontSize: 24, fontWeight: "800", color: colors.onSurface }}
+              keyboardType="decimal-pad"
+              autoFocus
+              value={editPaymentAmount}
+              onChangeText={setEditPaymentAmount}
+              placeholder="0.00"
+              placeholderTextColor={colors.muted}
+            />
+            <Text style={{ fontSize: 12, color: colors.muted, marginTop: 14, marginBottom: 8, fontWeight: "700" }}>NOTE</Text>
+            <TextInput
+              style={{ backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, padding: 14, borderRadius: radius.md, fontSize: 15, fontWeight: "600", color: colors.onSurface }}
+              value={editPaymentNote}
+              onChangeText={setEditPaymentNote}
+              placeholder="UPI ref, cash..."
+              placeholderTextColor={colors.muted}
+            />
+            <View style={{ flexDirection: "row", gap: 12, marginTop: 24 }}>
+              <Pressable onPress={() => { setEditPaymentModal(false); setActionPayment(null); }} style={{ flex: 1, padding: 16, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, alignItems: "center" }}>
+                <Text style={{ fontWeight: "700", color: colors.onSurface }}>Cancel</Text>
+              </Pressable>
+              <Pressable onPress={submitEditPayment} style={{ flex: 1, padding: 16, borderRadius: radius.pill, backgroundColor: colors.brand, alignItems: "center" }}>
+                <Text style={{ fontWeight: "700", color: "#fff" }}>Save</Text>
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <ActionModal
+        visible={!!actionPayment && !editPaymentModal}
+        title={actionPayment?.note || "Payment"}
+        subtitle="What would you like to do?"
+        onClose={() => setActionPayment(null)}
+        actions={[
+          {
+            label: "Edit payment",
+            icon: "create-outline",
+            color: colors.brand,
+            onPress: () => actionPayment && openEditPayment(actionPayment),
+          },
+          {
+            label: "Remove payment",
+            icon: "trash-outline",
+            isDestructive: true,
+            onPress: () => {
+              if (actionPayment) {
+                setDeletePayment(actionPayment);
+                setActionPayment(null);
+              }
+            },
+          },
+        ]}
+      />
+
+      <ConfirmModal 
+        visible={!!deletePayment}
+        title="Remove payment?"
+        subtitle={`Are you sure you want to remove this ${formatMoney(deletePayment?.amount || 0, currency)} payment? Your loan balance will be adjusted automatically.`}
+        confirmText="Remove"
+        isDestructive={true}
+        onCancel={() => setDeletePayment(null)}
+        onConfirm={confirmDeletePayment}
+      />
 
     </View>
   );

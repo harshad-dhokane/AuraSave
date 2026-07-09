@@ -12,22 +12,11 @@ import { useCurrency } from "@/src/currency";
 import { addGoal } from "@/src/store";
 import { useTheme } from "@/src/theme/ThemeContext";
 
-const PERIODS = ["3 months", "6 months", "1 year", "5 years"];
 const PRIORITIES: { value: "low" | "medium" | "high"; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { value: "low", label: "Low", icon: "remove-circle-outline" },
   { value: "medium", label: "Medium", icon: "radio-button-on-outline" },
   { value: "high", label: "High", icon: "alert-circle-outline" },
 ];
-
-function deadlineForPeriod(period: string) {
-  const date = new Date();
-  if (period === "3 months") date.setMonth(date.getMonth() + 3);
-  else if (period === "6 months") date.setMonth(date.getMonth() + 6);
-  else if (period === "1 year") date.setFullYear(date.getFullYear() + 1);
-  else if (period === "5 years") date.setFullYear(date.getFullYear() + 5);
-  else return undefined;
-  return date.toISOString();
-}
 
 export default function AddGoalScreen() {
   const { colors } = useTheme();
@@ -41,7 +30,10 @@ export default function AddGoalScreen() {
   const [title, setTitle] = useState(params.title || "");
   const [target, setTarget] = useState(params.target ? String(params.target) : "");
   const [saved, setSaved] = useState(params.saved ? String(params.saved) : "");
-  const [period, setPeriod] = useState(PERIODS[2]);
+  const [goalYears, setGoalYears] = useState("1");
+  const [goalMonths, setGoalMonths] = useState("0");
+  const [goalDays, setGoalDays] = useState("0");
+  const [noDeadline, setNoDeadline] = useState(false);
   const [priority, setPriority] = useState<"low" | "medium" | "high">("medium");
   const [autoContribution, setAutoContribution] = useState("");
   const [autoDay, setAutoDay] = useState("1");
@@ -55,13 +47,34 @@ export default function AddGoalScreen() {
     }
     const t = Number(target);
     const s = Number(saved) || 0;
+    const y = parseInt(goalYears) || 0;
+    const m = parseInt(goalMonths) || 0;
+    const d = parseInt(goalDays) || 0;
+    
+    let deadline: string | undefined = undefined;
+    let periodStr = "";
+    
+    if (!noDeadline && (y > 0 || m > 0 || d > 0)) {
+      const date = new Date();
+      date.setFullYear(date.getFullYear() + y);
+      date.setMonth(date.getMonth() + m);
+      date.setDate(date.getDate() + d);
+      deadline = date.toISOString();
+      
+      const parts = [];
+      if (y > 0) parts.push(`${y}y`);
+      if (m > 0) parts.push(`${m}m`);
+      if (d > 0) parts.push(`${d}d`);
+      periodStr = parts.join(" ");
+    }
+
     await addGoal({
       title: title.trim(),
       target: t,
       saved: s,
       status: s >= t ? "completed" : "pending",
-      period,
-      deadline: deadlineForPeriod(period),
+      period: periodStr || undefined,
+      deadline,
       priority,
       autoContributionAmount: Number(autoContribution) || undefined,
       autoContributionDay: autoContribution ? Math.min(31, Math.max(1, Number(autoDay) || 1)) : undefined,
@@ -118,18 +131,51 @@ export default function AddGoalScreen() {
             </View>
           </View>
 
-          <Text style={[s.label, { marginTop: 24 }]}>Target Period</Text>
-          <View style={s.periodRow}>
-            {PERIODS.map((p) => (
-              <Pressable
-                key={p}
-                onPress={() => setPeriod(p)}
-                style={[s.periodChip, period === p && s.periodChipAct]}
-              >
-                <Text style={[s.periodText, period === p && s.periodTextAct]}>{p}</Text>
-              </Pressable>
-            ))}
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 24, marginBottom: 12 }}>
+            <Text style={[s.label, { marginTop: 0 }]}>Target Period</Text>
+            <Pressable onPress={() => setNoDeadline(!noDeadline)} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Ionicons name={noDeadline ? "checkbox" : "square-outline"} size={20} color={noDeadline ? colors.brand : colors.muted} />
+              <Text style={{ fontSize: 14, color: noDeadline ? colors.brand : colors.muted, fontWeight: "600" }}>No deadline</Text>
+            </Pressable>
           </View>
+          
+          {!noDeadline && (
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={s.label}>Years</Text>
+                <TextInput
+                  value={goalYears}
+                  onChangeText={(v) => setGoalYears(v.replace(/[^0-9]/g, ""))}
+                  placeholder="0"
+                  placeholderTextColor={colors.muted}
+                  keyboardType="numeric"
+                  style={s.input}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.label}>Months</Text>
+                <TextInput
+                  value={goalMonths}
+                  onChangeText={(v) => setGoalMonths(v.replace(/[^0-9]/g, ""))}
+                  placeholder="0"
+                  placeholderTextColor={colors.muted}
+                  keyboardType="numeric"
+                  style={s.input}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.label}>Days</Text>
+                <TextInput
+                  value={goalDays}
+                  onChangeText={(v) => setGoalDays(v.replace(/[^0-9]/g, ""))}
+                  placeholder="0"
+                  placeholderTextColor={colors.muted}
+                  keyboardType="numeric"
+                  style={s.input}
+                />
+              </View>
+            </View>
+          )}
 
           <Text style={[s.label, { marginTop: 24 }]}>Priority</Text>
           <View style={s.priorityRow}>

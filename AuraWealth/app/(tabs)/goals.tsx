@@ -20,7 +20,7 @@ import { useCurrency } from "@/src/currency";
 import { useTabBarScroll } from "@/src/context/TabBarScrollContext";
 import { useTheme } from "@/src/theme/ThemeContext";
 
-const PERIODS = ["3 months", "6 months", "1 year", "2 years", "5 years", "No deadline"];
+
 const GOAL_TABS: { key: "active" | "paused" | "completed" | "archived"; label: string }[] = [
   { key: "active", label: "Active" },
   { key: "paused", label: "Paused" },
@@ -39,16 +39,6 @@ type ModalState =
   | { kind: "edit"; goal: Goal }
   | { kind: "add-funds"; goal: Goal }
 
-function deadlineForPeriod(period: string) {
-  if (period === "No deadline") return undefined;
-  const date = new Date();
-  if (period === "3 months") date.setMonth(date.getMonth() + 3);
-  else if (period === "6 months") date.setMonth(date.getMonth() + 6);
-  else if (period === "1 year") date.setFullYear(date.getFullYear() + 1);
-  else if (period === "2 years") date.setFullYear(date.getFullYear() + 2);
-  else if (period === "5 years") date.setFullYear(date.getFullYear() + 5);
-  return date.toISOString();
-}
 
 function monthsLeft(deadline?: string) {
   if (!deadline) return 0;
@@ -90,7 +80,10 @@ export default function GoalsTab() {
     title: "",
     target: "",
     saved: "",
-    period: "No deadline",
+    goalYears: "1",
+    goalMonths: "0",
+    goalDays: "0",
+    noDeadline: false,
     priority: "medium" as "low" | "medium" | "high",
     autoContribution: "",
     autoDay: "1",
@@ -108,11 +101,34 @@ export default function GoalsTab() {
   };
 
   const openEdit = (g: Goal) => {
+    let y = 0, m = 0, d = 0;
+    let noDeadline = !g.period;
+    
+    if (g.period) {
+      const parts = g.period.split(" ");
+      for (const p of parts) {
+        if (p.endsWith("y")) y = parseInt(p) || 0;
+        if (p.endsWith("m")) m = parseInt(p) || 0;
+        if (p.endsWith("d")) d = parseInt(p) || 0;
+      }
+    }
+
+    if (g.period === "No deadline") {
+        noDeadline = true;
+    } else if (g.period === "3 months") { m = 3; noDeadline = false; }
+    else if (g.period === "6 months") { m = 6; noDeadline = false; }
+    else if (g.period === "1 year") { y = 1; noDeadline = false; }
+    else if (g.period === "2 years") { y = 2; noDeadline = false; }
+    else if (g.period === "5 years") { y = 5; noDeadline = false; }
+
     setForm({
       title: g.title,
       target: String(g.target),
       saved: String(g.saved),
-      period: g.period || "No deadline",
+      goalYears: String(y || 0),
+      goalMonths: String(m || 0),
+      goalDays: String(d || 0),
+      noDeadline,
       priority: g.priority || "medium",
       autoContribution: g.autoContributionAmount ? String(g.autoContributionAmount) : "",
       autoDay: g.autoContributionDay ? String(g.autoContributionDay) : "1",
@@ -130,14 +146,35 @@ export default function GoalsTab() {
     const target = Number(form.target); const saved = Number(form.saved) || 0;
     if (!form.title.trim() || !target || target <= 0) { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error); return; }
     const status = saved >= target ? "completed" : "pending";
-    const period = form.period === "No deadline" ? undefined : form.period;
+    
+    const y = parseInt(form.goalYears) || 0;
+    const m = parseInt(form.goalMonths) || 0;
+    const d = parseInt(form.goalDays) || 0;
+    
+    let deadline: string | undefined = undefined;
+    let periodStr = "";
+    
+    if (!form.noDeadline && (y > 0 || m > 0 || d > 0)) {
+      const date = new Date();
+      date.setFullYear(date.getFullYear() + y);
+      date.setMonth(date.getMonth() + m);
+      date.setDate(date.getDate() + d);
+      deadline = date.toISOString();
+      
+      const parts = [];
+      if (y > 0) parts.push(`${y}y`);
+      if (m > 0) parts.push(`${m}m`);
+      if (d > 0) parts.push(`${d}d`);
+      periodStr = parts.join(" ");
+    }
+    
     const patch = {
       title: form.title.trim(),
       target,
       saved,
       status: status as "pending" | "completed",
-      period,
-      deadline: deadlineForPeriod(form.period),
+      period: periodStr || undefined,
+      deadline,
       priority: form.priority,
       autoContributionAmount: form.autoContribution ? Number(form.autoContribution) : 0,
       autoContributionDay: form.autoContribution ? Math.min(31, Math.max(1, Number(form.autoDay) || 1)) : 0,
@@ -194,7 +231,9 @@ export default function GoalsTab() {
             <Text style={s.title}>Goals</Text>
             <Text style={s.subtitle}>Track your savings</Text>
           </View>
-          <Pressable onPress={openNew} style={s.addBtn}><Ionicons name="add" size={16} color={colors.brand} /><Text style={s.addBtnText}>New</Text></Pressable>
+          <Pressable onPress={openNew} hitSlop={10} style={{ padding: 8, backgroundColor: colors.surfaceSecondary, borderRadius: 12 }}>
+            <Ionicons name="add" size={20} color={colors.onSurface} />
+          </Pressable>
         </View>
       </View>
       <ScrollView contentContainerStyle={{ paddingTop: 0, paddingBottom: 140 }} showsVerticalScrollIndicator={false} onScroll={onScroll} scrollEventThrottle={16}>
@@ -259,8 +298,8 @@ export default function GoalsTab() {
           <BlurView 
             intensity={45} 
             tint={isDark ? "systemUltraThinMaterialDark" : "systemUltraThinMaterialLight"} 
-            blurReductionFactor={2}
-            experimentalBlurMethod="dimezisBlurView"
+            blurReductionFactor={2} experimentalBlurMethod="dimezisBlurView"
+           
             style={StyleSheet.absoluteFill}
           >
             <Pressable style={{ flex: 1 }} onPress={close} />
@@ -296,8 +335,30 @@ export default function GoalsTab() {
                   <View style={{ flex: 1 }}><Text style={s.formLabel}>Target ({currency.symbol})</Text><TextInput value={form.target} onChangeText={(v) => setForm({ ...form, target: v.replace(/[^0-9]/g, "") })} placeholder="100000" placeholderTextColor={colors.muted} keyboardType="numeric" style={s.input} /></View>
                   {modal.kind === "new" && <View style={{ flex: 1 }}><Text style={s.formLabel}>Saved ({currency.symbol})</Text><TextInput value={form.saved} onChangeText={(v) => setForm({ ...form, saved: v.replace(/[^0-9]/g, "") })} placeholder="0" placeholderTextColor={colors.muted} keyboardType="numeric" style={s.input} /></View>}
                 </View>
-                <Text style={[s.formLabel, { marginTop: 14 }]}>Period</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>{PERIODS.map((p) => (<Pressable key={p} onPress={() => setForm({ ...form, period: p })} style={[s.pChip, form.period === p && s.pChipAct]}><Text style={[s.pText, form.period === p && s.pTextAct]}>{p}</Text></Pressable>))}</ScrollView>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 14, marginBottom: 8 }}>
+                  <Text style={[s.formLabel, { marginTop: 0 }]}>Target Period</Text>
+                  <Pressable onPress={() => setForm({ ...form, noDeadline: !form.noDeadline })} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons name={form.noDeadline ? "checkbox" : "square-outline"} size={20} color={form.noDeadline ? colors.brand : colors.muted} />
+                    <Text style={{ fontSize: 14, color: form.noDeadline ? colors.brand : colors.muted, fontWeight: "600" }}>No deadline</Text>
+                  </Pressable>
+                </View>
+                
+                {!form.noDeadline && (
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.formLabel, { fontSize: 12, marginTop: 0, marginBottom: 4 }]}>Years</Text>
+                      <TextInput value={form.goalYears} onChangeText={(v) => setForm({ ...form, goalYears: v.replace(/[^0-9]/g, "") })} placeholder="0" placeholderTextColor={colors.muted} keyboardType="numeric" style={s.input} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.formLabel, { fontSize: 12, marginTop: 0, marginBottom: 4 }]}>Months</Text>
+                      <TextInput value={form.goalMonths} onChangeText={(v) => setForm({ ...form, goalMonths: v.replace(/[^0-9]/g, "") })} placeholder="0" placeholderTextColor={colors.muted} keyboardType="numeric" style={s.input} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.formLabel, { fontSize: 12, marginTop: 0, marginBottom: 4 }]}>Days</Text>
+                      <TextInput value={form.goalDays} onChangeText={(v) => setForm({ ...form, goalDays: v.replace(/[^0-9]/g, "") })} placeholder="0" placeholderTextColor={colors.muted} keyboardType="numeric" style={s.input} />
+                    </View>
+                  </View>
+                )}
                 <Text style={[s.formLabel, { marginTop: 14 }]}>Priority</Text>
                 <View style={s.priorityRow}>
                   {(["low", "medium", "high"] as const).map((p) => (

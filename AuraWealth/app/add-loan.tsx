@@ -10,7 +10,7 @@ import * as Haptics from "expo-haptics";
 import { DatePickerModal } from "@/src/components/DatePicker";
 import { radius, spacing, shadow } from "@/src/theme";
 import { useCurrency } from "@/src/currency";
-import { addLoan, addTransaction, getCategories, addCategory } from "@/src/store";
+import { addLoan, updateLoan, addTransaction, getCategories, addCategory } from "@/src/store";
 import { formatDate } from "@/src/utils/format";
 import { useTheme } from "@/src/theme/ThemeContext";
 
@@ -20,20 +20,20 @@ export default function AddLoanScreen() {
 
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const params = useLocalSearchParams<{ type?: string; person?: string; amount?: string; repaymentExpected?: string }>();
+  const params = useLocalSearchParams<{ editId?: string; type?: string; person?: string; amount?: string; repaymentExpected?: string; note?: string; date?: string; dueDate?: string; interestRate?: string; groupName?: string; proofNote?: string }>();
   const { currency } = useCurrency();
 
   const [type, setType] = useState<"lent" | "borrowed">((params.type as any) || "lent");
   const [person, setPerson] = useState(params.person || "");
   const [amount, setAmount] = useState(params.amount || "");
-  const [notes, setNotes] = useState("");
-  const [interestRate, setInterestRate] = useState("");
-  const [proofNote, setProofNote] = useState("");
-  const [groupName, setGroupName] = useState("");
+  const [notes, setNotes] = useState(params.note || "");
+  const [interestRate, setInterestRate] = useState(params.interestRate || "");
+  const [proofNote, setProofNote] = useState(params.proofNote || "");
+  const [groupName, setGroupName] = useState(params.groupName || "");
   const [repaymentExpected, setRepaymentExpected] = useState(params.repaymentExpected !== "false");
   
-  const [date, setDate] = useState(new Date());
-  const [dueDate, setDueDate] = useState<Date | null>(null);
+  const [date, setDate] = useState(params.date ? new Date(params.date) : new Date());
+  const [dueDate, setDueDate] = useState<Date | null>(params.dueDate ? new Date(params.dueDate) : null);
   
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showDuePicker, setShowDuePicker] = useState(false);
@@ -73,29 +73,55 @@ export default function AddLoanScreen() {
         note: (type === "lent" ? "Gift to " : "Gift from ") + person.trim() + (notes ? ` - ${notes.trim()}` : "") + (groupName ? ` (${groupName.trim()})` : ""),
       });
 
-      // Also create a loan record so it appears on the Lending page
-      await addLoan({
-        type,
-        person: person.trim(),
-        amount: Number(amount),
-        date: date.toISOString(),
-        repaymentExpected: false,
-        notes: (notes.trim() ? notes.trim() + " — " : "") + "Gift / No repayment",
-        groupName: groupName.trim() || undefined,
-      });
+      if (params.editId) {
+        await updateLoan(params.editId, {
+          type,
+          person: person.trim(),
+          amount: Number(amount),
+          date: date.toISOString(),
+          repaymentExpected: false,
+          notes: (notes.trim() ? notes.trim() + " — " : "") + "Gift / No repayment",
+          groupName: groupName.trim() || undefined,
+        });
+      } else {
+        await addLoan({
+          type,
+          person: person.trim(),
+          amount: Number(amount),
+          date: date.toISOString(),
+          repaymentExpected: false,
+          notes: (notes.trim() ? notes.trim() + " — " : "") + "Gift / No repayment",
+          groupName: groupName.trim() || undefined,
+        });
+      }
     } else {
-      await addLoan({
-        type,
-        person: person.trim(),
-        amount: Number(amount),
-        date: date.toISOString(),
-        dueDate: dueDate ? dueDate.toISOString() : undefined,
-        repaymentExpected,
-        notes: notes.trim() || undefined,
-        interestRate: Number(interestRate) || undefined,
-        proofNote: proofNote.trim() || undefined,
-        groupName: groupName.trim() || undefined,
-      });
+      if (params.editId) {
+        await updateLoan(params.editId, {
+          type,
+          person: person.trim(),
+          amount: Number(amount),
+          date: date.toISOString(),
+          dueDate: dueDate ? dueDate.toISOString() : undefined,
+          repaymentExpected,
+          notes: notes.trim() || undefined,
+          interestRate: Number(interestRate) || undefined,
+          proofNote: proofNote.trim() || undefined,
+          groupName: groupName.trim() || undefined,
+        });
+      } else {
+        await addLoan({
+          type,
+          person: person.trim(),
+          amount: Number(amount),
+          date: date.toISOString(),
+          dueDate: dueDate ? dueDate.toISOString() : undefined,
+          repaymentExpected,
+          notes: notes.trim() || undefined,
+          interestRate: Number(interestRate) || undefined,
+          proofNote: proofNote.trim() || undefined,
+          groupName: groupName.trim() || undefined,
+        });
+      }
     }
     
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -106,7 +132,7 @@ export default function AddLoanScreen() {
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <View style={[s.header, { paddingTop: insets.top + 8 }]}>
-          <Text style={s.headerTitle}>New Record</Text>
+          <Text style={s.headerTitle}>{params.editId ? "Edit Record" : "New Record"}</Text>
           <Pressable onPress={() => router.back()} style={s.closeBtn}>
             <Ionicons name="close" size={24} color={colors.onSurface} />
           </Pressable>

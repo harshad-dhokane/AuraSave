@@ -8,9 +8,11 @@ import * as Haptics from "expo-haptics";
 
 import { radius, spacing } from "@/src/theme";
 import { formatMoney, formatDate, monthLabel } from "@/src/utils/format";
-import { getBudgets, getCategories, getTransactions, Budget, Category, Transaction, upsertBudget, deleteBudget } from "@/src/store";
+import { getBudgets, getCategories, getTransactions, Budget, Category, Transaction, upsertBudget, deleteBudget, deleteTransaction } from "@/src/store";
 import { useCurrency } from "@/src/currency";
 import { CategoryIcon, EmptyState } from "@/src/components/CategoryIcon";
+import { ConfirmModal } from "@/src/components/ConfirmModal";
+import { ActionModal } from "@/src/components/ActionModal";
 import { useTheme } from "@/src/theme/ThemeContext";
 
 const ALERT_OPTIONS = [70, 80, 90, 100];
@@ -78,6 +80,9 @@ export default function BudgetDetailScreen() {
   const [alertPercent, setAlertPercent] = useState(80);
   const [recurringDay, setRecurringDay] = useState("");
   const [budgetNotes, setBudgetNotes] = useState("");
+  const [actionTx, setActionTx] = useState<Transaction | null>(null);
+  const [deleteTx, setDeleteTx] = useState<Transaction | null>(null);
+  const [showDeleteBudget, setShowDeleteBudget] = useState(false);
   const blurTint = isDark ? "systemUltraThinMaterialDark" : "systemUltraThinMaterialLight";
 
   useEffect(() => {
@@ -128,11 +133,40 @@ export default function BudgetDetailScreen() {
     load();
   };
   
-  const removeBudget = async () => {
+  const removeBudget = () => {
+    if (!budget) return;
+    setShowDeleteBudget(true);
+  };
+
+  const confirmDeleteBudget = async () => {
     if (!budget) return;
     await deleteBudget(budget.id);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    setShowDeleteBudget(false);
     router.back();
+  };
+
+  const confirmDeleteTx = async () => {
+    if (!deleteTx) return;
+    await deleteTransaction(deleteTx.id);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    setDeleteTx(null);
+    load();
+  };
+
+  const handleEditTx = (tx: Transaction) => {
+    setActionTx(null);
+    router.push({
+      pathname: "/add-transaction",
+      params: {
+        editId: tx.id,
+        type: tx.type,
+        amount: String(tx.amount),
+        note: tx.note || "",
+        categoryId: tx.categoryId,
+        date: tx.date,
+      },
+    });
   };
 
   const spent = useMemo(() => txs.length > 0 ? txs.reduce((s, t) => s + t.amount, 0) : (initialSpent ? Number(initialSpent) : 0), [txs, initialSpent]);
@@ -163,9 +197,8 @@ export default function BudgetDetailScreen() {
           <Ionicons name="arrow-back" size={24} color={colors.onSurface} />
         </Pressable>
         <Text style={s.title} numberOfLines={1}>{category.name} Budget</Text>
-        <Pressable onPress={() => setShowEdit(true)} style={s.addBtn}>
-          <Ionicons name="create-outline" size={16} color={colors.surface} />
-          <Text style={s.addBtnText}>Edit</Text>
+        <Pressable onPress={() => setShowEdit(true)} hitSlop={10} style={{ padding: 8, backgroundColor: colors.surfaceSecondary, borderRadius: 12 }}>
+          <Ionicons name="pencil" size={20} color={colors.onSurface} />
         </Pressable>
       </View>
 
@@ -237,13 +270,18 @@ export default function BudgetDetailScreen() {
             </View>
           ) : (
             txs.map((t, i) => (
-              <View key={t.id} style={[s.historyRow, i === txs.length - 1 && { borderBottomWidth: 0 }]}>
+              <Pressable 
+                key={t.id} 
+                onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setActionTx(t); }}
+                delayLongPress={350}
+                style={[s.historyRow, i === txs.length - 1 && { borderBottomWidth: 0 }]}
+              >
                 <View style={{ flex: 1, marginRight: 12 }}>
                   <Text style={s.historyTitle} numberOfLines={1}>{t.note || "Expense"}</Text>
                   <Text style={s.historyDate}>{formatDate(t.date)}</Text>
                 </View>
                 <Text style={s.historyAmt}>-{formatMoney(t.amount, currency)}</Text>
-              </View>
+              </Pressable>
             ))
           )}
         </View>
@@ -255,18 +293,18 @@ export default function BudgetDetailScreen() {
       </ScrollView>
 
       {/* Edit Limit Modal */}
-      <Modal visible={showEdit} transparent animationType="fade">
-        <View style={{ flex: 1, justifyContent: "center", padding: 24 }}>
+      <Modal visible={showEdit} transparent animationType="slide">
+        <View style={{ flex: 1, justifyContent: "flex-end" }}>
           <BlurView
             intensity={45}
             tint={blurTint}
-            blurReductionFactor={2}
-            experimentalBlurMethod="dimezisBlurView"
+            blurReductionFactor={2} experimentalBlurMethod="dimezisBlurView"
+           
             style={StyleSheet.absoluteFill}
           >
             <Pressable style={{ flex: 1 }} onPress={() => setShowEdit(false)} />
           </BlurView>
-          <View style={{ backgroundColor: colors.surface, borderRadius: 24, padding: 24, maxHeight: "88%" }}>
+          <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: insets.bottom + 24, maxHeight: "88%" }}>
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <Text style={{ fontSize: 18, fontWeight: "800", color: colors.onSurface, marginBottom: 16 }}>Edit Budget Limit</Text>
             <Text style={{ fontSize: 11, color: colors.muted, textTransform: "uppercase", fontWeight: "700", marginBottom: 6 }}>Amount ({currency.symbol})</Text>
@@ -326,6 +364,52 @@ export default function BudgetDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      <ActionModal
+        visible={!!actionTx}
+        title={actionTx?.note || "Transaction"}
+        subtitle="What would you like to do?"
+        onClose={() => setActionTx(null)}
+        actions={[
+          {
+            label: "Edit transaction",
+            icon: "create-outline",
+            color: colors.brand,
+            onPress: () => actionTx && handleEditTx(actionTx),
+          },
+          {
+            label: "Delete transaction",
+            icon: "trash-outline",
+            isDestructive: true,
+            onPress: () => {
+              if (actionTx) {
+                setDeleteTx(actionTx);
+                setActionTx(null);
+              }
+            },
+          },
+        ]}
+      />
+
+      <ConfirmModal
+        visible={showDeleteBudget}
+        title="Remove budget limit?"
+        subtitle={`Are you sure you want to remove the limit for "${category.name}"? Your transactions will remain safe.`}
+        confirmText="Remove"
+        isDestructive={true}
+        onCancel={() => setShowDeleteBudget(false)}
+        onConfirm={confirmDeleteBudget}
+      />
+
+      <ConfirmModal
+        visible={!!deleteTx}
+        title="Delete transaction?"
+        subtitle={`Are you sure you want to delete "${deleteTx?.note || "this transaction"}"? This action cannot be undone.`}
+        confirmText="Delete"
+        isDestructive={true}
+        onCancel={() => setDeleteTx(null)}
+        onConfirm={confirmDeleteTx}
+      />
     </View>
   );
 }

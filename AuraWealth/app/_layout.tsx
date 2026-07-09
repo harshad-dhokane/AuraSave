@@ -1,7 +1,7 @@
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useEffect, useState, useRef } from "react";
-import { LogBox, View, ActivityIndicator, AppState, StyleSheet, Pressable, Text } from "react-native";
+import React, { useEffect, useState, useRef } from "react";
+import { LogBox, View, ActivityIndicator, AppState, StyleSheet, Pressable, Text, Image } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -21,7 +21,11 @@ import { ThemeProvider, useTheme } from "@/src/theme/ThemeContext";
 // Disable logbox errors etc so that users can see the app
 LogBox.ignoreAllLogs(true)
 
-SplashScreen.preventAutoHideAsync();
+try {
+  SplashScreen.preventAutoHideAsync();
+} catch (e) {
+  console.warn("[AuraWealth] SplashScreen.preventAutoHideAsync failed:", e);
+}
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth();
@@ -49,7 +53,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!loading) {
-      SplashScreen.hideAsync();
+      SplashScreen.hideAsync().catch(() => {});
     }
   }, [loading]);
 
@@ -139,12 +143,14 @@ function AppLockGate({ children }: { children: React.ReactNode }) {
       {children}
       {isLocked && (
         <View style={[StyleSheet.absoluteFill, { zIndex: 99999, elevation: 99999 }]}>
-          <BlurView
-            intensity={90}
-            tint={isDark ? "dark" : "light"}
-            experimentalBlurMethod="dimezisBlurView"
-            style={StyleSheet.absoluteFill}
-          />
+          {showPinPad ? (
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.surface }]} />
+          ) : (
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.surface, justifyContent: "center", alignItems: "center" }]}>
+              <Image source={require("../assets/images/icon.png")} style={{ width: 100, height: 100, borderRadius: 24, marginBottom: 16 }} resizeMode="contain" />
+              <Text style={{ fontSize: 24, fontWeight: "800", color: colors.onSurface }}>Aura Wealth</Text>
+            </View>
+          )}
           <View style={{ flex: 1, justifyContent: "center", alignItems: "center", paddingTop: 80 }}>
             {showPinPad ? (
               <PinPad
@@ -153,31 +159,89 @@ function AppLockGate({ children }: { children: React.ReactNode }) {
                 error={pinError}
                 onPinComplete={handleCustomPin}
               />
-            ) : (
-              <>
-                <Ionicons name="lock-closed" size={64} color={colors.brand} style={{ marginBottom: 20 }} />
-                <Text style={{ fontSize: 20, fontWeight: "800", color: colors.onSurface, marginBottom: 40 }}>
-                  Aura Wealth is Locked
-                </Text>
-                <Pressable
-                  onPress={authenticate}
-                  style={{
-                    backgroundColor: colors.brand,
-                    paddingHorizontal: 32,
-                    paddingVertical: 14,
-                    borderRadius: 24,
-                  }}
-                >
-                  <Text style={{ color: "#fff", fontWeight: "700", fontSize: 16 }}>Unlock</Text>
-                </Pressable>
-              </>
-            )}
+            ) : null}
           </View>
         </View>
       )}
     </View>
   );
 }
+
+// ── Global Error Boundary ──────────────────────────────────────────────────
+// Catches any unhandled JS errors and shows a recovery screen instead of
+// crashing the app.
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  state = { hasError: false, error: null as Error | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("[AuraWealth] Uncaught error:", error, info.componentStack);
+  }
+
+  handleRestart = () => {
+    // Clear the error state so the tree re-mounts
+    this.setState({ hasError: false, error: null });
+  };
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={errorStyles.container}>
+          <StatusBar style="light" />
+          <Ionicons name="warning" size={56} color="#E77977" style={{ marginBottom: 16 }} />
+          <Text style={errorStyles.title}>Something went wrong</Text>
+          <Text style={errorStyles.message}>
+            {this.state.error?.message || "An unexpected error occurred."}
+          </Text>
+          <Pressable style={errorStyles.btn} onPress={this.handleRestart}>
+            <Text style={errorStyles.btnText}>Restart App</Text>
+          </Pressable>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const errorStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#121413",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 32,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    marginBottom: 8,
+  },
+  message: {
+    fontSize: 14,
+    color: "#9CA3AF",
+    textAlign: "center",
+    lineHeight: 20,
+    marginBottom: 32,
+  },
+  btn: {
+    backgroundColor: "#498E6C",
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 24,
+  },
+  btnText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 16,
+  },
+});
 
 export default function RootLayout() {
   const [loaded, error] = useIconFonts();
@@ -187,18 +251,20 @@ export default function RootLayout() {
   if (!loaded && !error) return null;
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <ThemeProvider>
-          <AuthProvider>
-            <CurrencyProvider>
-              <AppLockGate>
-                <AppContent />
-              </AppLockGate>
-            </CurrencyProvider>
-          </AuthProvider>
-        </ThemeProvider>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <ErrorBoundary>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <ThemeProvider>
+            <AuthProvider>
+              <CurrencyProvider>
+                <AppLockGate>
+                  <AppContent />
+                </AppLockGate>
+              </CurrencyProvider>
+            </AuthProvider>
+          </ThemeProvider>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    </ErrorBoundary>
   );
 }

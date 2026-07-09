@@ -201,7 +201,9 @@ export default function BudgetsScreen() {
 
         <View style={s.sectionRow}>
           <Text style={s.sectionTitle}>Category budgets</Text>
-          <Pressable onPress={openAddScreen} style={s.addBtn}><Ionicons name="add" size={16} color={colors.brand} /><Text style={s.addBtnText}>Add</Text></Pressable>
+          <Pressable onPress={openAddScreen} hitSlop={10} style={{ padding: 8, backgroundColor: colors.surfaceSecondary, borderRadius: 12 }}>
+            <Ionicons name="add" size={20} color={colors.onSurface} />
+          </Pressable>
         </View>
 
         {monthBudgets.length === 0 ? (
@@ -265,8 +267,8 @@ export default function BudgetsScreen() {
           <BlurView
             intensity={45}
             tint={blurTint}
-            blurReductionFactor={2}
-            experimentalBlurMethod="dimezisBlurView"
+            blurReductionFactor={2} experimentalBlurMethod="dimezisBlurView"
+           
             style={StyleSheet.absoluteFill}
           >
             <Pressable style={{ flex: 1 }} onPress={close} />

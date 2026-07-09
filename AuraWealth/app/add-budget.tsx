@@ -271,8 +271,8 @@ export default function AddBudgetScreen() {
           <BlurView
             intensity={45}
             tint={blurTint}
-            blurReductionFactor={2}
-            experimentalBlurMethod="dimezisBlurView"
+            blurReductionFactor={2} experimentalBlurMethod="dimezisBlurView"
+           
             style={StyleSheet.absoluteFill}
           >
             <Pressable style={{ flex: 1 }} onPress={() => setShowNewCat(false)} />

@@ -11,7 +11,11 @@ import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 import { makeRedirectUri } from "expo-auth-session";
 
-WebBrowser.maybeCompleteAuthSession();
+try {
+  WebBrowser.maybeCompleteAuthSession();
+} catch (e) {
+  console.warn("[AuraWealth] maybeCompleteAuthSession failed:", e);
+}
 
 interface AuthState {
   session: Session | null;
@@ -41,6 +45,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Retrieve existing session on mount
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
+      setLoading(false);
+    }).catch((err) => {
+      console.warn("[AuraWealth] Failed to get session:", err);
       setLoading(false);
     });
 

@@ -23,7 +23,7 @@ const TABS: {
     { name: "goals", label: "Goals", icon: "flag", route: "/(tabs)/goals" },
   ];
 
-function CustomTabBar({ state, descriptors, navigation, colors, styles, onAiPress, onAiLongPress, onAiPressOut, isDirectRecording, isDirectProcessing }: any) {
+function CustomTabBar({ state, descriptors, navigation, colors, styles, onAiPress }: any) {
   const insets = useSafeAreaInsets();
 
   return (
@@ -70,11 +70,9 @@ function CustomTabBar({ state, descriptors, navigation, colors, styles, onAiPres
       
       <Pressable
         onPress={onAiPress}
-        onLongPress={onAiLongPress}
-        onPressOut={onAiPressOut}
-        style={[styles.fab, { backgroundColor: isDirectRecording ? colors.error : colors.brand }]}
+        style={[styles.fab, { backgroundColor: colors.brand }]}
       >
-        <Ionicons name={isDirectProcessing ? "hourglass" : "sparkles"} size={24} color="#fff" />
+        <Ionicons name="sparkles" size={24} color="#fff" />
       </Pressable>
     </View>
   );
@@ -97,25 +95,10 @@ export default function TabsLayout() {
           <CustomTabBar 
             {...props} 
             colors={colors} 
-            styles={styles} 
+            styles={styles}
             onAiPress={() => {
-              if (Date.now() - longPressEndTime.current > 500) {
-                setAiVisible(true);
-              }
+              setAiVisible(true);
             }}
-            onAiLongPress={() => {
-              isLongPressing.current = true;
-              aiRef.current?.startDirectRecording();
-            }}
-            onAiPressOut={() => {
-              if (isLongPressing.current) {
-                aiRef.current?.stopDirectRecording();
-                isLongPressing.current = false;
-                longPressEndTime.current = Date.now();
-              }
-            }}
-            isDirectRecording={directStatus === "recording" && !aiVisible}
-            isDirectProcessing={directStatus === "processing"}
           />
         )}
       >
@@ -131,7 +114,6 @@ export default function TabsLayout() {
         onClose={() => setAiVisible(false)} 
         onDirectStatusChange={setDirectStatus} 
       />
-      <DirectRecordingOverlay visible={directStatus === "recording" && !aiVisible} colors={colors} isDark={isDark} />
     </TabBarScrollProvider>
   );
 }
@@ -170,8 +152,8 @@ function DirectRecordingOverlay({ visible, colors, isDark }: { visible: boolean;
       <BlurView
         intensity={45}
         tint={isDark ? "systemUltraThinMaterialDark" : "systemUltraThinMaterialLight"}
-        blurReductionFactor={2}
-        experimentalBlurMethod="dimezisBlurView"
+        blurReductionFactor={2} experimentalBlurMethod="dimezisBlurView"
+       
         style={StyleSheet.absoluteFill}
       />
       <Animated.View style={{ 

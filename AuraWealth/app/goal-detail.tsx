@@ -8,9 +8,11 @@ import * as Haptics from "expo-haptics";
 
 import { radius, spacing } from "@/src/theme";
 import { formatMoney, formatDate } from "@/src/utils/format";
-import { getGoals, getGoalContributions, Goal, GoalContribution, addGoalContribution, updateGoal, deleteGoal } from "@/src/store";
+import { getGoals, getGoalContributions, Goal, GoalContribution, addGoalContribution, updateGoal, deleteGoal, deleteGoalContribution, updateGoalContribution } from "@/src/store";
 import { useCurrency } from "@/src/currency";
 import { EmptyState } from "@/src/components/CategoryIcon";
+import { ConfirmModal } from "@/src/components/ConfirmModal";
+import { ActionModal } from "@/src/components/ActionModal";
 import { useTheme } from "@/src/theme/ThemeContext";
 
 function monthsLeft(deadline?: string) {
@@ -52,6 +54,11 @@ export default function GoalDetailScreen() {
   // Add funds modal state
   const [showAdd, setShowAdd] = useState(false);
   const [contributionAmt, setContributionAmt] = useState("");
+  const [actionContrib, setActionContrib] = useState<GoalContribution | null>(null);
+  const [deleteContrib, setDeleteContrib] = useState<GoalContribution | null>(null);
+  const [editContribId, setEditContribId] = useState<string | null>(null);
+  const [editContribAmt, setEditContribAmt] = useState("");
+  const [showDeleteGoal, setShowDeleteGoal] = useState(false);
   const blurTint = isDark ? "systemUltraThinMaterialDark" : "systemUltraThinMaterialLight";
 
   useEffect(() => {
@@ -71,14 +78,23 @@ export default function GoalDetailScreen() {
 
   const removeGoal = () => {
     if (!goal) return;
-    Alert.alert("Delete goal?", "This cannot be undone.", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: async () => { 
-        await deleteGoal(goal.id); 
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); 
-        router.back(); 
-      } },
-    ]);
+    setShowDeleteGoal(true);
+  };
+
+  const confirmDeleteGoal = async () => {
+    if (!goal) return;
+    await deleteGoal(goal.id);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    setShowDeleteGoal(false);
+    router.back();
+  };
+
+  const confirmDeleteContrib = async () => {
+    if (!deleteContrib || !goal) return;
+    await deleteGoalContribution(deleteContrib.id, goal.id, deleteContrib.amount);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    setDeleteContrib(null);
+    load();
   };
 
   const submitFunds = async () => {
@@ -99,6 +115,22 @@ export default function GoalDetailScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); 
     setShowAdd(false);
     setContributionAmt("");
+    load();
+  };
+
+  const submitEditContrib = async () => {
+    if (!editContribId || !goal) return;
+    const oldContrib = contributions.find(c => c.id === editContribId);
+    if (!oldContrib) return;
+    const newAmt = Number(editContribAmt);
+    if (!newAmt || newAmt <= 0) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
+    await updateGoalContribution(editContribId, goal.id, oldContrib.amount, newAmt);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setEditContribId(null);
+    setEditContribAmt("");
     load();
   };
 
@@ -139,9 +171,8 @@ export default function GoalDetailScreen() {
         </Pressable>
         <Text style={s.title} numberOfLines={1}>{goal.title}</Text>
         {!done && !goal.isPaused && !goal.isArchived ? (
-          <Pressable onPress={() => setShowAdd(true)} style={s.addBtn}>
-            <Ionicons name="add" size={16} color={colors.surface} />
-            <Text style={s.addBtnText}>Add</Text>
+          <Pressable onPress={() => setShowAdd(true)} hitSlop={10} style={{ padding: 8, backgroundColor: colors.surfaceSecondary, borderRadius: 12 }}>
+            <Ionicons name="add" size={20} color={colors.onSurface} />
           </Pressable>
         ) : (
           <View style={{ width: 60 }} />
@@ -219,7 +250,12 @@ export default function GoalDetailScreen() {
             </View>
           ) : (
             contributions.map((c, i) => (
-              <View key={c.id} style={[s.historyRow, i === contributions.length - 1 && { borderBottomWidth: 0 }]}>
+              <Pressable 
+                key={c.id} 
+                onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setActionContrib(c); }}
+                delayLongPress={350}
+                style={[s.historyRow, i === contributions.length - 1 && { borderBottomWidth: 0 }]}
+              >
                 <View style={s.historyIcon}>
                   <Ionicons name="arrow-up" size={14} color={colors.brand} />
                 </View>
@@ -228,7 +264,7 @@ export default function GoalDetailScreen() {
                   <Text style={s.historyDate}>{formatDate(c.createdAt)}</Text>
                 </View>
                 <Text style={s.historyAmt}>+{formatMoney(c.amount, currency)}</Text>
-              </View>
+              </Pressable>
             ))
           )}
         </View>
@@ -240,10 +276,10 @@ export default function GoalDetailScreen() {
       </ScrollView>
 
       {/* Add Funds Modal */}
-      <Modal visible={showAdd} transparent animationType="fade">
-        <View style={{ flex: 1, justifyContent: "center", padding: 24 }}>
+      <Modal visible={showAdd} transparent animationType="slide">
+        <View style={{ flex: 1, justifyContent: "flex-end" }}>
           <BlurView intensity={45} tint={blurTint} blurReductionFactor={2} experimentalBlurMethod="dimezisBlurView" style={StyleSheet.absoluteFill}><Pressable style={{ flex: 1 }} onPress={() => setShowAdd(false)} /></BlurView>
-          <View style={{ backgroundColor: colors.surface, borderRadius: 24, padding: 24 }}>
+          <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: insets.bottom + 24 }}>
             <Text style={{ fontSize: 18, fontWeight: "800", color: colors.onSurface, marginBottom: 16 }}>Add Funds</Text>
             <Text style={{ fontSize: 11, color: colors.muted, textTransform: "uppercase", fontWeight: "700", marginBottom: 6 }}>Amount ({currency.symbol})</Text>
             <TextInput 
@@ -262,6 +298,82 @@ export default function GoalDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Edit Contribution Modal */}
+      <Modal visible={!!editContribId} transparent animationType="slide">
+        <View style={{ flex: 1, justifyContent: "flex-end" }}>
+          <BlurView intensity={45} tint={blurTint} blurReductionFactor={2} experimentalBlurMethod="dimezisBlurView" style={StyleSheet.absoluteFill}><Pressable style={{ flex: 1 }} onPress={() => setEditContribId(null)} /></BlurView>
+          <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: insets.bottom + 24 }}>
+            <Text style={{ fontSize: 18, fontWeight: "800", color: colors.onSurface, marginBottom: 16 }}>Edit Contribution</Text>
+            <Text style={{ fontSize: 11, color: colors.muted, textTransform: "uppercase", fontWeight: "700", marginBottom: 6 }}>Amount ({currency.symbol})</Text>
+            <TextInput 
+              value={editContribAmt} 
+              onChangeText={(v) => setEditContribAmt(v.replace(/[^0-9]/g, ""))} 
+              placeholder="5000" 
+              placeholderTextColor={colors.muted} 
+              keyboardType="numeric" 
+              style={s.input} 
+              autoFocus 
+            />
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 24 }}>
+              <Pressable style={[s.btn, s.btnG]} onPress={() => setEditContribId(null)}><Text style={s.btnGT}>Cancel</Text></Pressable>
+              <Pressable style={[s.btn, s.btnP, { opacity: !editContribAmt ? 0.5 : 1 }]} onPress={submitEditContrib} disabled={!editContribAmt}><Text style={s.btnPT}>Save</Text></Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <ActionModal
+        visible={!!actionContrib}
+        title="Contribution"
+        subtitle={actionContrib ? `+${formatMoney(actionContrib.amount, currency)}` : ""}
+        onClose={() => setActionContrib(null)}
+        actions={[
+          {
+            label: "Edit contribution",
+            icon: "create-outline",
+            color: colors.brand,
+            onPress: () => {
+              if (actionContrib) {
+                setEditContribId(actionContrib.id);
+                setEditContribAmt(String(actionContrib.amount));
+                setActionContrib(null);
+              }
+            },
+          },
+          {
+            label: "Remove contribution",
+            icon: "trash-outline",
+            isDestructive: true,
+            onPress: () => {
+              if (actionContrib) {
+                setDeleteContrib(actionContrib);
+                setActionContrib(null);
+              }
+            },
+          },
+        ]}
+      />
+
+      <ConfirmModal
+        visible={showDeleteGoal}
+        title="Delete goal?"
+        subtitle={`Are you sure you want to delete "${goal.title}"? This action cannot be undone.`}
+        confirmText="Delete"
+        isDestructive={true}
+        onCancel={() => setShowDeleteGoal(false)}
+        onConfirm={confirmDeleteGoal}
+      />
+
+      <ConfirmModal
+        visible={!!deleteContrib}
+        title="Remove contribution?"
+        subtitle={`Remove ${deleteContrib ? formatMoney(deleteContrib.amount, currency) : ""} from "${goal.title}"? This will subtract the amount from your saved total.`}
+        confirmText="Remove"
+        isDestructive={true}
+        onCancel={() => setDeleteContrib(null)}
+        onConfirm={confirmDeleteContrib}
+      />
     </View>
   );
 }

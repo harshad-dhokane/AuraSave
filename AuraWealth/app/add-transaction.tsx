@@ -19,7 +19,7 @@ import * as Haptics from "expo-haptics";
 import { BlurView } from "expo-blur";
 
 import { radius, spacing, shadow } from "@/src/theme";
-import { getCategories, addTransaction, Category, TxType, addCategory } from "@/src/store";
+import { getCategories, getTransactions, addTransaction, updateTransaction, Category, TxType, addCategory } from "@/src/store";
 import { useCurrency } from "@/src/currency";
 import { parseSms } from "@/src/utils/sms-parser";
 import { DatePickerModal } from "@/src/components/DatePicker";
@@ -42,7 +42,8 @@ export default function AddTransaction() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { currency } = useCurrency();
-  const params = useLocalSearchParams<{ type?: string; mode?: string; amount?: string; note?: string; categoryId?: string; date?: string }>();
+  const params = useLocalSearchParams<{ type?: string; mode?: string; amount?: string; note?: string; categoryId?: string; date?: string; editId?: string }>();
+  const isEditing = !!params.editId;
 
   const [mode, setMode] = useState<"manual" | "sms">(params.mode === "sms" ? "sms" : "manual");
   const [smsText, setSmsText] = useState("");
@@ -80,6 +81,7 @@ export default function AddTransaction() {
 
   useEffect(() => {
     if (mustChooseCategory) return; // gate auto-fallback while user must choose
+    if (cats.length === 0) return; // wait for categories to load before validating
     if (categoryId) {
       const found = cats.find((c) => c.id === categoryId);
       if (found && found.type === type) return;
@@ -132,13 +134,23 @@ export default function AddTransaction() {
       return;
     }
     setSaving(true);
-    await addTransaction({
-      type,
-      amount: num,
-      categoryId,
-      note: note.trim() || undefined,
-      date: date.toISOString(),
-    });
+    if (isEditing && params.editId) {
+      await updateTransaction(params.editId, {
+        type,
+        amount: num,
+        categoryId,
+        note: note.trim() || undefined,
+        date: date.toISOString(),
+      });
+    } else {
+      await addTransaction({
+        type,
+        amount: num,
+        categoryId,
+        note: note.trim() || undefined,
+        date: date.toISOString(),
+      });
+    }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setSaving(false);
     router.back();
@@ -197,7 +209,7 @@ export default function AddTransaction() {
 
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>New transaction</Text>
+            <Text style={styles.headerTitle}>{isEditing ? "Edit transaction" : "New transaction"}</Text>
             <Pressable testID="close-btn" onPress={() => router.back()} style={styles.headerBtn}>
               <Ionicons name="close" size={20} color={colors.onSurface} />
             </Pressable>
@@ -466,8 +478,8 @@ export default function AddTransaction() {
           <BlurView 
             intensity={45} 
             tint={isDark ? "systemUltraThinMaterialDark" : "systemUltraThinMaterialLight"} 
-            blurReductionFactor={2}
-            experimentalBlurMethod="dimezisBlurView"
+            blurReductionFactor={2} experimentalBlurMethod="dimezisBlurView"
+           
             style={StyleSheet.absoluteFill}
           >
             <Pressable style={{ flex: 1 }} onPress={() => setShowNewCat(false)} />

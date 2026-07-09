@@ -23,7 +23,13 @@
         "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.emergent.spendingdashboard.b7xt7m"
+      "package": "com.emergent.spendingdashboard.b7xt7m",
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -60,7 +66,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "2c453772-73e6-450f-8ec2-e856b3bad02f"
+        "projectId": "2d4f4cec-59d7-4939-a746-4d98af80b8d1"
       }
     }
   }

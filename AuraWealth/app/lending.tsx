@@ -10,6 +10,7 @@ import { radius, spacing, shadow } from "@/src/theme";
 import { formatMoney, formatDate } from "@/src/utils/format";
 import { getLoans, Loan, deleteLoan } from "@/src/store";
 import { ConfirmModal } from "@/src/components/ConfirmModal";
+import { ActionModal } from "@/src/components/ActionModal";
 import { EmptyState } from "@/src/components/CategoryIcon";
 import { useCurrency } from "@/src/currency";
 import { useTheme } from "@/src/theme/ThemeContext";
@@ -44,6 +45,7 @@ export default function LendingScreen() {
   const [loans, setLoans] = useState<Loan[]>([]);
   const [tab, setTab] = useState<"lent" | "borrowed">("lent");
   const [filter, setFilter] = useState<LoanFilter>("all");
+  const [actionLoan, setActionLoan] = useState<Loan | null>(null);
   const [deleteLoanId, setDeleteLoanId] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [filterDropdownTop, setFilterDropdownTop] = useState(0);
@@ -54,6 +56,26 @@ export default function LendingScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     setDeleteLoanId(null);
     load();
+  };
+
+  const handleEditLoan = (loan: Loan) => {
+    setActionLoan(null);
+    router.push({
+      pathname: "/add-loan",
+      params: {
+        editId: loan.id,
+        type: loan.type,
+        person: loan.person,
+        amount: String(loan.amount),
+        repaymentExpected: String(loan.repaymentExpected),
+        note: loan.notes || "",
+        date: loan.date,
+        dueDate: loan.dueDate || "",
+        interestRate: loan.interestRate ? String(loan.interestRate) : "",
+        groupName: loan.groupName || "",
+        proofNote: loan.proofNote || "",
+      },
+    });
   };
 
   const load = useCallback(async () => {
@@ -117,9 +139,8 @@ export default function LendingScreen() {
             <Text style={s.title}>Lending</Text>
             <Text style={s.subtitle}>Manage your loans</Text>
           </View>
-          <Pressable onPress={() => router.push("/add-loan")} style={s.addBtn}>
-            <Ionicons name="add" size={16} color={colors.brand} />
-            <Text style={s.addBtnText}>New</Text>
+          <Pressable onPress={() => router.push("/add-loan")} hitSlop={10} style={{ padding: 8, backgroundColor: colors.surfaceSecondary, borderRadius: 12 }}>
+            <Ionicons name="add" size={20} color={colors.onSurface} />
           </Pressable>
         </View>
       </View>
@@ -239,7 +260,8 @@ export default function LendingScreen() {
                 <Pressable
                   key={l.id}
                   onPress={() => router.push({ pathname: "/loan-detail", params: { id: l.id, initialLoan: JSON.stringify(l) } })}
-                  onLongPress={() => setDeleteLoanId(l.id)}
+                  onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setActionLoan(l); }}
+                  delayLongPress={350}
                   style={s.card}
                 >
                   <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -277,6 +299,32 @@ export default function LendingScreen() {
       </ScrollView>
       {showFilters && <Pressable style={s.dropdownDismissLayer} onPress={() => setShowFilters(false)} />}
       
+      <ActionModal
+        visible={!!actionLoan}
+        title={actionLoan?.person || "Loan"}
+        subtitle="What would you like to do?"
+        onClose={() => setActionLoan(null)}
+        actions={[
+          {
+            label: "Edit record",
+            icon: "create-outline",
+            color: colors.brand,
+            onPress: () => actionLoan && handleEditLoan(actionLoan),
+          },
+          {
+            label: "Delete record",
+            icon: "trash-outline",
+            isDestructive: true,
+            onPress: () => {
+              if (actionLoan) {
+                setDeleteLoanId(actionLoan.id);
+                setActionLoan(null);
+              }
+            },
+          },
+        ]}
+      />
+
       <ConfirmModal 
         visible={!!deleteLoanId}
         title="Delete loan?"

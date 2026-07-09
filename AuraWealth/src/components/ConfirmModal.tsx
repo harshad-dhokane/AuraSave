@@ -33,8 +33,8 @@ export function ConfirmModal({
       <BlurView 
         intensity={45} 
         tint={isDark ? "systemUltraThinMaterialDark" : "systemUltraThinMaterialLight"} 
-        blurReductionFactor={2}
-        experimentalBlurMethod="dimezisBlurView"
+        blurReductionFactor={2} experimentalBlurMethod="dimezisBlurView"
+       
         style={StyleSheet.absoluteFill}
       >
         <Pressable style={styles.overlay} onPress={onCancel}>

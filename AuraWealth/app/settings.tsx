@@ -281,8 +281,8 @@ export default function Settings() {
           <BlurView
             intensity={BLUR_INTENSITY}
             tint={blurTint}
-            blurReductionFactor={2}
-            experimentalBlurMethod="dimezisBlurView"
+            blurReductionFactor={2} experimentalBlurMethod="dimezisBlurView"
+           
             style={StyleSheet.absoluteFill}
           >
             <Pressable style={{ flex: 1 }} onPress={() => setEditing(false)} />
@@ -321,8 +321,8 @@ export default function Settings() {
           <BlurView
             intensity={BLUR_INTENSITY}
             tint={blurTint}
-            blurReductionFactor={2}
-            experimentalBlurMethod="dimezisBlurView"
+            blurReductionFactor={2} experimentalBlurMethod="dimezisBlurView"
+           
             style={StyleSheet.absoluteFill}
           >
             <Pressable style={{ flex: 1 }} onPress={() => setPickingTheme(false)} />
@@ -369,8 +369,8 @@ export default function Settings() {
           <BlurView
             intensity={BLUR_INTENSITY}
             tint={blurTint}
-            blurReductionFactor={2}
-            experimentalBlurMethod="dimezisBlurView"
+            blurReductionFactor={2} experimentalBlurMethod="dimezisBlurView"
+           
             style={StyleSheet.absoluteFill}
           >
             <Pressable style={{ flex: 1 }} onPress={() => setPickingCurrency(false)} />

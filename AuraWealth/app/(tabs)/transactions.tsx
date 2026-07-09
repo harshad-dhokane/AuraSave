@@ -16,6 +16,7 @@ import * as Haptics from "expo-haptics";
 import { radius, spacing, shadow } from "@/src/theme";
 import { formatDayLabel, formatMoney } from "@/src/utils/format";
 import { ConfirmModal } from "@/src/components/ConfirmModal";
+import { ActionModal } from "@/src/components/ActionModal";
 import {
   getTransactions,
   getCategories,
@@ -64,6 +65,7 @@ export default function TransactionsScreen() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [q, setQ] = useState("");
   const [deleteItem, setDeleteItem] = useState<UnifiedRecord | null>(null);
+  const [actionItem, setActionItem] = useState<UnifiedRecord | null>(null);
   const [infoItem, setInfoItem] = useState<UnifiedRecord | null>(null);
 
   const load = useCallback(async () => {
@@ -112,12 +114,29 @@ export default function TransactionsScreen() {
     return groups;
   }, [filtered]);
 
-  const handleDelete = (item: UnifiedRecord) => {
+  const handleLongPress = (item: UnifiedRecord) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (item.type === "saved" || item.type === "lent" || item.type === "borrowed") {
       setInfoItem(item);
       return;
     }
-    setDeleteItem(item);
+    setActionItem(item);
+  };
+
+  const handleEdit = (item: UnifiedRecord) => {
+    setActionItem(null);
+    const original = item.originalData as any;
+    router.push({
+      pathname: "/add-transaction",
+      params: {
+        editId: item.id,
+        type: item.type,
+        amount: String(item.amount),
+        note: original?.note || "",
+        categoryId: original?.categoryId || "",
+        date: item.date,
+      },
+    });
   };
   
   const confirmDelete = async () => {
@@ -155,9 +174,10 @@ export default function TransactionsScreen() {
           <Pressable
             testID="tx-add-btn"
             onPress={() => router.push("/add-transaction")}
-            style={styles.headerBtn}
+            hitSlop={10} 
+            style={{ padding: 8, backgroundColor: colors.surfaceSecondary, borderRadius: 12 }}
           >
-            <Ionicons name="add" size={22} color={colors.brand} />
+            <Ionicons name="add" size={20} color={colors.onSurface} />
           </Pressable>
         </View>
 
@@ -284,7 +304,7 @@ export default function TransactionsScreen() {
                     <Pressable
                       key={t.id}
                       testID={`tx-item-${t.id}`}
-                      onLongPress={() => handleDelete(t)}
+                      onLongPress={() => handleLongPress(t)}
                       delayLongPress={350}
                       style={[styles.row, i !== item.items.length - 1 && styles.rowBorder]}
                     >
@@ -310,6 +330,32 @@ export default function TransactionsScreen() {
 
       {showFilters && <Pressable style={styles.dropdownDismissLayer} onPress={() => setShowFilters(false)} />}
       
+      <ActionModal
+        visible={!!actionItem}
+        title={`${(actionItem?.subtitle && actionItem.subtitle !== "Transaction" ? actionItem.subtitle : actionItem?.title) || "Transaction"}`}
+        subtitle="What would you like to do?"
+        onClose={() => setActionItem(null)}
+        actions={[
+          {
+            label: "Edit transaction",
+            icon: "create-outline",
+            color: colors.brand,
+            onPress: () => actionItem && handleEdit(actionItem),
+          },
+          {
+            label: "Delete transaction",
+            icon: "trash-outline",
+            isDestructive: true,
+            onPress: () => {
+              if (actionItem) {
+                setDeleteItem(actionItem);
+                setActionItem(null);
+              }
+            },
+          },
+        ]}
+      />
+
       <ConfirmModal 
         visible={!!deleteItem}
         title="Delete transaction?"
